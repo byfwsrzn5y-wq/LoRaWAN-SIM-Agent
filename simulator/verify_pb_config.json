@@ -1,0 +1,28 @@
+{
+  "gatewayEui": "0203040506070809",
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://127.0.0.1:1883",
+    "clientId": "multigw-pb-verify",
+    "mqttTopicPrefix": "as923",
+    "marshaler": "protobuf"
+  },
+  "lorawan": {
+    "enabled": true,
+    "joinEnabled": true
+  },
+  "multiGateway": {
+    "enabled": true,
+    "mode": "overlapping",
+    "gateways": [
+      {"eui": "0203040506070809", "name": "gateway-center", "position": {"x": 0, "y": 0, "z": 30}},
+      {"eui": "020304050607080A", "name": "gateway-east", "position": {"x": 2000, "y": 0, "z": 25}},
+      {"eui": "020304050607080B", "name": "gateway-south", "position": {"x": 0, "y": -1500, "z": 20}}
+    ]
+  },
+  "signalModel": {"enabled": true, "environment": "urban", "txPower": 14},
+  "devices": [
+    {"name": "test-node", "position": {"x": 500, "y": 300, "z": 2}, "lorawan": {"activation": "OTAA", "devEui": "69AE9F1F00010000", "appEui": "0000000000000000", "appKey": "00112233445566778899AABBCCDDEEFF", "nwkKey": "00112233445566778899AABBCCDDEEFF"}}
+  ],
+  "uplink": {"enabled": true, "intervalMs": 8000}
+}

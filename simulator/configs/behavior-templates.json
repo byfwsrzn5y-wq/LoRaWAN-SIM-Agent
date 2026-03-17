@@ -1,0 +1,123 @@
+{
+  "version": "1.0",
+  "description": "节点行为模型：先定义基线（完整功能正常），异常模板通过 extends 仅写相对基线的差异。可在此文件持续新增模板。",
+  "baseline": {
+    "description": "节点完整功能正常行为：OTAA 一次入网、Unconfirmed、接受 ADR、区域多信道、无丢包/重传/重复 FCnt、常规间隔。",
+    "nodeState": { "rssi": -80, "snr": 5, "rssiJitter": 1.5, "snrJitter": 0.8 },
+    "uplink": { "interval": 30000 }
+  },
+  "templates": {
+    "normal-near": {
+      "extends": "baseline",
+      "description": "正常-近端：信号好",
+      "nodeState": { "rssi": -72, "snr": 7 }
+    },
+    "normal-mid": {
+      "extends": "baseline",
+      "description": "正常-中距",
+      "nodeState": { "rssi": -82, "snr": 5 }
+    },
+    "normal-far": {
+      "extends": "baseline",
+      "description": "正常-远端",
+      "nodeState": { "rssi": -92, "snr": 3 }
+    },
+    "bad-snr-1": {
+      "extends": "baseline",
+      "description": "干扰严重-SNR差1",
+      "nodeState": { "rssi": -88, "snr": -2, "rssiJitter": 3, "snrJitter": 1.5 }
+    },
+    "bad-snr-2": {
+      "extends": "baseline",
+      "description": "干扰严重-SNR差2",
+      "nodeState": { "rssi": -90, "snr": 0, "rssiJitter": 2.5, "snrJitter": 1.2 }
+    },
+    "bad-snr-3": {
+      "extends": "baseline",
+      "description": "干扰严重-SNR差3",
+      "nodeState": { "rssi": -95, "snr": -1, "rssiJitter": 4, "snrJitter": 1.8 }
+    },
+    "rejoin-5s": {
+      "extends": "baseline",
+      "description": "频繁重入网-每5s重置",
+      "uplink": { "interval": 5000, "rejoinIntervalMs": 5000 }
+    },
+    "good-sf7-adr-fail": {
+      "extends": "baseline",
+      "description": "信号好但最低SF且ADR失败",
+      "nodeState": { "rssi": -65, "snr": 9 },
+      "lorawan": { "dataRate": 5 },
+      "adrReject": true
+    },
+    "high-rate-confirmed": {
+      "extends": "baseline",
+      "description": "高频率5s且confirmed",
+      "nodeState": { "rssi": -75, "snr": 6 },
+      "uplink": { "interval": 5000, "lorawan": { "confirmed": true } }
+    },
+    "mac-heavy": {
+      "extends": "baseline",
+      "description": "以MAC交互为主-应用数据少",
+      "nodeState": { "rssi": -78, "snr": 5 },
+      "uplink": { "interval": 15000, "payloadLength": 2, "linkCheckInterval": 1 }
+    },
+    "low-battery": {
+      "extends": "baseline",
+      "description": "低电量/差裕量上报",
+      "devStatus": { "battery": 10, "margin": -15 }
+    },
+    "lossy": {
+      "extends": "baseline",
+      "description": "上行随机丢包25%",
+      "nodeState": { "rssi": -88, "snr": 3 },
+      "uplink": { "interval": 20000, "uplinkDropRatio": 0.25 }
+    },
+    "join-then-sleep": {
+      "extends": "baseline",
+      "description": "入网后发一包即长睡1小时",
+      "nodeState": { "rssi": -75, "snr": 6 },
+      "uplink": { "interval": 10000, "intervalAfterFirstDataMs": 3600000 }
+    },
+    "duplicate-fcnt": {
+      "extends": "baseline",
+      "description": "首包FCnt重复一次",
+      "uplink": { "duplicateFirstData": true }
+    },
+    "burst-silence": {
+      "extends": "baseline",
+      "description": "突发5包/2s后静默5分钟",
+      "nodeState": { "rssi": -82, "snr": 4 },
+      "uplink": { "burstCount": 5, "burstIntervalMs": 2000, "silenceAfterBurstMs": 300000 }
+    },
+    "sf12-good-signal": {
+      "extends": "baseline",
+      "description": "ADR不合理-信号好却固定SF12(DR0)-空口占用大",
+      "nodeState": { "rssi": -68, "snr": 8 },
+      "lorawan": { "dataRate": 0 },
+      "adrReject": true
+    },
+    "sf7-poor-link": {
+      "extends": "baseline",
+      "description": "SF不合理-弱链路却用SF7-易丢包",
+      "nodeState": { "rssi": -96, "snr": -3, "rssiJitter": 2, "snrJitter": 1 },
+      "lorawan": { "dataRate": 5 },
+      "adrReject": true
+    },
+    "channel-single": {
+      "extends": "baseline",
+      "description": "频段配置不合理-仅用单信道",
+      "nodeState": { "channels": [923.2] }
+    },
+    "link-jittery": {
+      "extends": "baseline",
+      "description": "链路波动大-时间序列异常",
+      "nodeState": { "rssi": -82, "snr": 4, "rssiJitter": 8, "snrJitter": 4 }
+    },
+    "confirmed-lossy": {
+      "extends": "baseline",
+      "description": "确认包+高丢包-重传多",
+      "nodeState": { "rssi": -86, "snr": 2 },
+      "uplink": { "interval": 10000, "lorawan": { "confirmed": true }, "uplinkDropRatio": 0.35 }
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "gatewayEui": "ac1f09fffe1c55d3",
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://127.0.0.1:1883",
+    "clientId": "test-confirmed-ack-v2",
+    "topicPrefix": "as923",
+    "marshaler": "json"
+  },
+  "lorawan": {
+    "enabled": true,
+    "joinEnabled": true,
+    "confirmed": true,
+    "fPort": 10
+  },
+  "devices": [
+    {
+      "name": "confirmed-test-01",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "69AE9F1F00010000",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "confirmed-test-02",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "69AE9F1F00020000",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    }
+  ],
+  "uplink": {
+    "enabled": true,
+    "intervalMs": 5000
+  }
+}

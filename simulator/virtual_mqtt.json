@@ -1,0 +1,23 @@
+{
+  "gatewayEui": "0203040506070809",
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://127.0.0.1:1883",
+    "clientId": "virtual-gw-0203040506070809",
+    "topicPrefix": "as923",
+    "marshaler": "json"
+  },
+  "lorawan": {
+    "enabled": true,
+    "deviceCount": 26,
+    "joinEnabled": true
+  },
+  "uplink": {
+    "enabled": true,
+    "intervalMs": 5000
+  },
+  "stats": {
+    "enabled": true,
+    "intervalMs": 30000
+  }
+}

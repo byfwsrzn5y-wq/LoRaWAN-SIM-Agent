@@ -1,0 +1,29 @@
+{
+  "gatewayEui": "ac1f09fffe1c55d3",
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://127.0.0.1:1883",
+    "clientId": "real-gw-otaa-pb",
+    "topicPrefix": "as923",
+    "marshaler": "protobuf"
+  },
+  "lorawan": {
+    "enabled": true,
+    "joinEnabled": true
+  },
+  "devices": [
+    {
+      "name": "test-otaa-01",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "69AE9F1F00010000",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    }
+  ],
+  "uplink": {
+    "enabled": true,
+    "intervalMs": 15000
+  }
+}

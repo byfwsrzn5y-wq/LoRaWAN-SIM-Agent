@@ -1,0 +1,42 @@
+{
+  "gatewayEui": "0203040506070809",
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://127.0.0.1:1883",
+    "clientId": "virtual-gw-0203040506070809",
+    "topicPrefix": "as923",
+    "marshaler": "json"
+  },
+  "lorawan": {
+    "enabled": true,
+    "joinEnabled": true
+  },
+  "devices": [
+    {
+      "name": "test-otaa-01",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "69AE9F1F00010000",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "test-otaa-02",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "69AE9F1F00020000",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    }
+  ],
+  "uplink": {
+    "enabled": true,
+    "intervalMs": 10000
+  },
+  "stats": {
+    "enabled": true,
+    "intervalMs": 30000
+  }
+}

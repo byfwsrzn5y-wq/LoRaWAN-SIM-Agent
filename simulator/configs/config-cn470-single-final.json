@@ -1,0 +1,34 @@
+{
+  "description": "CN470 single OTAA device test - correct frequencies",
+  "gatewayEui": "0102030405060708",
+  "lnsHost": "10.5.40.109",
+  "lnsPort": 1700,
+  "mqtt": {
+    "enabled": false
+  },
+  "lorawan": {
+    "enabled": true,
+    "activation": "OTAA",
+    "class": "C",
+    "appEui": "0000000000000001",
+    "devEui": "0102030405060701",
+    "appKey": "00112233445566778899AABBCCDDEEFF",
+    "otaaName": "cn470-test-01"
+  },
+  "uplink": {
+    "enabled": true,
+    "codec": "simple",
+    "payloadLength": 4,
+    "interval": 10000,
+    "scatterMode": "random",
+    "region": "AS923-1",
+    "nodeState": {
+      "channels": [486.3, 486.5, 486.7, 486.9, 487.1, 487.3, 487.5, 487.7]
+    }
+  },
+  "stats": { "enabled": false },
+  "controlServer": {
+    "enabled": true,
+    "port": 9999
+  }
+}

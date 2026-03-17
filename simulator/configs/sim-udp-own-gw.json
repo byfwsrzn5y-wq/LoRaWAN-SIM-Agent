@@ -1,0 +1,31 @@
+{
+  "description": "自建网关 + UDP直连AS923 Gateway Bridge (端口1702)",
+  "gatewayEui": "0203040506070809",
+  "mqtt": {
+    "enabled": false
+  },
+  "udp": {
+    "enabled": true,
+    "lnsHost": "10.5.40.109",
+    "lnsPort": 1702,
+    "udpBindPort": 0
+  },
+  "lorawan": {
+    "enabled": true,
+    "activation": "OTAA",
+    "class": "C",
+    "csvImportPath": "configs/adr-10-devices.csv",
+    "appKey": "00112233445566778899AABBCCDDEEFF",
+    "nodeState": {
+      "dataRate": 0,
+      "txPowerIndex": 0,
+      "rssi": -95,
+      "snr": 3
+    }
+  },
+  "uplink": {
+    "enabled": true,
+    "interval": 8000,
+    "region": "AS923-1"
+  }
+}

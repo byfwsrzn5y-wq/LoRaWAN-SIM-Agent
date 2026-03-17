@@ -1,0 +1,30 @@
+{
+  "description": "ADR长时测试 - MQTT + 真实网关 + Protobuf",
+  "gatewayEui": "ac1f09fffe1c55d3",
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://10.5.40.109:1883",
+    "clientId": "lorawan-adr-final",
+    "topicPrefix": "as923",
+    "marshaler": "protobuf"
+  },
+  "udp": { "enabled": false },
+  "lorawan": {
+    "enabled": true,
+    "activation": "OTAA",
+    "class": "C",
+    "csvImportPath": "configs/adr-10-devices.csv",
+    "appKey": "00112233445566778899AABBCCDDEEFF",
+    "nodeState": {
+      "dataRate": 0,
+      "txPowerIndex": 0,
+      "rssi": -95,
+      "snr": 3
+    }
+  },
+  "uplink": {
+    "enabled": true,
+    "interval": 5000,
+    "region": "AS923-1"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "lorawan-gateway-sim",
+  "version": "1.0.0",
+  "description": "LoRaWAN gateway simulator for ChirpStack — uplink/downlink via Gateway Bridge (MQTT/UDP), OTAA/ABP, MAC commands",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "start:config": "node index.js -c configs/config.json",
+    "start:100": "node index.js -c configs/config-100nodes-10types.json",
+    "start:otaa": "node index.js -c configs/config-otaa-demo-flow.json"
+  },
+  "keywords": ["lorawan", "chirpstack", "gateway", "simulator"],
+  "license": "MIT",
+  "engines": { "node": ">=14" },
+  "optionalDependencies": {
+    "mqtt": "^5.x",
+    "protobufjs": "^7.x"
+  }
+}

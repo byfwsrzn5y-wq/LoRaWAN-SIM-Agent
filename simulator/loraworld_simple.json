@@ -1,0 +1,28 @@
+{
+  "gatewayEui": "0203040506070809",
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://127.0.0.1:1883",
+    "clientId": "loraworld-test",
+    "mqttTopicPrefix": "as923",
+    "marshaler": "protobuf"
+  },
+  "lorawan": {
+    "enabled": true,
+    "joinEnabled": true
+  },
+  "multiGateway": {
+    "enabled": false
+  },
+  "devices": [
+    {"name": "node-01", "position": {"x": 245, "y": -892, "z": 2}, "lorawan": {"activation": "OTAA", "devEui": "69AE9F1F00010000", "appEui": "0000000000000000", "appKey": "00112233445566778899AABBCCDDEEFF", "nwkKey": "00112233445566778899AABBCCDDEEFF"}},
+    {"name": "node-02", "position": {"x": 1567, "y": 234, "z": 2}, "lorawan": {"activation": "OTAA", "devEui": "69AE9F1F00020000", "appEui": "0000000000000000", "appKey": "00112233445566778899AABBCCDDEEFF", "nwkKey": "00112233445566778899AABBCCDDEEFF"}},
+    {"name": "node-03", "position": {"x": -456, "y": 1234, "z": 2}, "lorawan": {"activation": "OTAA", "devEui": "69AE9F1F00030000", "appEui": "0000000000000000", "appKey": "00112233445566778899AABBCCDDEEFF", "nwkKey": "00112233445566778899AABBCCDDEEFF"}},
+    {"name": "node-04", "position": {"x": 1890, "y": -567, "z": 2}, "lorawan": {"activation": "OTAA", "devEui": "69AE9F1F00040000", "appEui": "0000000000000000", "appKey": "00112233445566778899AABBCCDDEEFF", "nwkKey": "00112233445566778899AABBCCDDEEFF"}},
+    {"name": "node-05", "position": {"x": -1234, "y": -890, "z": 2}, "lorawan": {"activation": "OTAA", "devEui": "69AE9F1F00050000", "appEui": "0000000000000000", "appKey": "00112233445566778899AABBCCDDEEFF", "nwkKey": "00112233445566778899AABBCCDDEEFF"}}
+  ],
+  "uplink": {
+    "enabled": true,
+    "intervalMs": 5000
+  }
+}

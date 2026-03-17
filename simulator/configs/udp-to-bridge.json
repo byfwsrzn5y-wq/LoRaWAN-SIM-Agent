@@ -1,0 +1,28 @@
+{
+  "description": "UDP模式 - 发送到Gateway Bridge",
+  "gatewayEui": "0203040506070809",
+  "udp": {
+    "enabled": true,
+    "lnsHost": "10.5.40.109",
+    "lnsPort": 1702,
+    "udpBindPort": 0
+  },
+  "mqtt": { "enabled": false },
+  "lorawan": {
+    "enabled": true,
+    "activation": "OTAA",
+    "class": "C",
+    "csvImportPath": "configs/unique-keys-devices.csv",
+    "nodeState": {
+      "dataRate": 0,
+      "txPowerIndex": 0,
+      "rssi": -95,
+      "snr": 3
+    }
+  },
+  "uplink": {
+    "enabled": true,
+    "interval": 8000,
+    "region": "AS923-1"
+  }
+}

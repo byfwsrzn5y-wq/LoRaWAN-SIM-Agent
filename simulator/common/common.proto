@@ -1,0 +1,227 @@
+syntax = "proto3";
+
+package common;
+
+option go_package = "github.com/chirpstack/chirpstack/api/go/v4/common";
+option java_package = "io.chirpstack.api";
+option java_multiple_files = true;
+option java_outer_classname = "CommonProto";
+option csharp_namespace = "Chirpstack.Common";
+option php_namespace = "Chirpstack\\Common";
+option php_metadata_namespace = "GPBMetadata\\Chirpstack\\Common";
+
+enum Modulation {
+  // LoRa
+  LORA = 0;
+
+  // FSK
+  FSK = 1;
+
+  // LR-FHSS
+  LR_FHSS = 2;
+}
+
+enum Region {
+  // EU868
+  EU868 = 0;
+
+  // US915
+  US915 = 2;
+
+  // CN779
+  CN779 = 3;
+
+  // EU433
+  EU433 = 4;
+
+  // AU915
+  AU915 = 5;
+
+  // CN470
+  CN470 = 6;
+
+  // AS923
+  AS923 = 7;
+
+  // AS923 with -1.80 MHz frequency offset
+  AS923_2 = 12;
+
+  // AS923 with -6.60 MHz frequency offset
+  AS923_3 = 13;
+
+  // AS923 with -5.90 MHz frequency offset
+  AS923_4 = 14;
+
+  // KR920
+  KR920 = 8;
+
+  // IN865
+  IN865 = 9;
+
+  // RU864
+  RU864 = 10;
+
+  // ISM2400 (LoRa 2.4 GHz)
+  ISM2400 = 11;
+}
+
+enum MType {
+  // JoinRequest.
+  JOIN_REQUEST = 0;
+
+  // JoinAccept.
+  JOIN_ACCEPT = 1;
+
+  // UnconfirmedDataUp.
+  UNCONFIRMED_DATA_UP = 2;
+
+  // UnconfirmedDataDown.
+  UNCONFIRMED_DATA_DOWN = 3;
+
+  // ConfirmedDataUp.
+  CONFIRMED_DATA_UP = 4;
+
+  // ConfirmedDataDown.
+  CONFIRMED_DATA_DOWN = 5;
+
+  // RejoinRequest.
+  REJOIN_REQUEST = 6;
+
+  // Proprietary.
+  PROPRIETARY = 7;
+}
+
+message KeyEnvelope {
+  // KEK label.
+  string kek_label = 1;
+
+  // AES key (when the kek_label is set, this value must first be decrypted).
+  bytes aes_key = 2;
+}
+
+message Location {
+  // Latitude.
+  double latitude = 1;
+
+  // Longitude.
+  double longitude = 2;
+
+  // Altitude.
+  double altitude = 3;
+
+  // Location source.
+  LocationSource source = 4;
+
+  // Accuracy (in meters).
+  float accuracy = 5;
+}
+
+enum LocationSource {
+  // Unknown.
+  UNKNOWN = 0;
+
+  // GPS.
+  GPS = 1;
+
+  // Manually configured.
+  CONFIG = 2;
+
+  // Geo resolver (resolver of the Network Server).
+  GEO_RESOLVER = 3;
+
+  // Geo resolver (TDOA).
+  GEO_RESOLVER_TDOA = 4;
+
+  // Geo resolver (RSSI).
+  GEO_RESOLVER_RSSI = 5;
+
+  // Geo resolver (GNSS).
+  GEO_RESOLVER_GNSS = 6;
+
+  // Geo resolver (WiFi).
+  GEO_RESOLVER_WIFI = 7;
+}
+
+enum Aggregation {
+  // Hour.
+  HOUR = 0;
+
+  // Day.
+  DAY = 1;
+
+  // Month.
+  MONTH = 2;
+}
+
+enum MetricKind {
+  // Incrementing counters that never decrease (these are not reset on each
+  // reading).
+  COUNTER = 0;
+
+  // Counters that can increase and decrease.
+  ABSOLUTE = 1;
+
+  // Rate of change per second.
+  GAUGE = 2;
+}
+
+enum CRCStatus {
+  // CRC not present.
+  NO_CRC = 0;
+
+  // Bad CRC.
+  BAD_CRC = 1;
+
+  // CRC OK.
+  CRC_OK = 2;
+}
+
+enum BatteryLevel {
+  // The battery level is not available.
+  UNKNOWN = 0;
+
+  // External power source is connected.
+  EXTERNAL_CONNECTED = 1;
+
+  // External power source is disconnected.
+  EXTERNAL_DISCONNECTED = 2;
+
+  // Battery level is low.
+  BATTERY_LEVEL_LOW = 3;
+
+  // Battery level is ok.
+  BATTERY_LEVEL_OK = 4;
+
+  // Battery level is full.
+  BATTERY_LEVEL_FULL = 5;
+}
+
+enum Regulation {
+  // Unknown.
+  UNKNOWN_REGULATION = 0;
+
+  // EU868.
+  EU868_REGULATION = 1;
+
+  // US915.
+  US915_REGULATION = 2;
+
+  // EU433.
+  EU433_REGULATION = 3;
+
+  // AS923.
+  AS923_REGULATION = 4;
+
+  // KR920.
+  KR920_REGULATION = 5;
+
+  // IN865.
+  IN865_REGULATION = 6;
+
+  // RU864.
+  RU864_REGULATION = 7;
+
+  // ISM2400.
+  ISM2400_REGULATION = 8;
+}
+

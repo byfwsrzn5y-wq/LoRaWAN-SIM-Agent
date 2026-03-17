@@ -1,0 +1,20 @@
+{
+  "gatewayEui": "0203040506070809",
+  "udp": {
+    "enabled": true,
+    "server": "127.0.0.1:1703"
+  },
+  "lorawan": {
+    "enabled": true,
+    "deviceCount": 1,
+    "joinEnabled": true
+  },
+  "uplink": {
+    "enabled": true,
+    "intervalMs": 5000
+  },
+  "stats": {
+    "enabled": true,
+    "intervalMs": 30000
+  }
+}

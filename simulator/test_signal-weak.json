@@ -1,0 +1,40 @@
+{
+  "gatewayEui": "0203040506070809",
+  "stats": { "enabled": true, "intervalMs": 30000 },
+  "lorawan": {
+    "enabled": true,
+    "joinEnabled": true,
+    "region": "AS923",
+    "appKey": "00112233445566778899AABBCCDDEEFF",
+    "nwkKey": "00112233445566778899AABBCCDDEEFF"
+  },
+  "uplink": { "enabled": true, "intervalMs": 8000 },
+  "udpMode": true,
+  "lnsHost": "127.0.0.1",
+  "lnsPort": 1702,
+  "devices": [
+    {
+      "name": "normal-control",
+      "devEui": "69AE9F1F00060001",
+      "activation": "OTAA",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "nwkKey": "00112233445566778899AABBCCDDEEFF",
+      "anomaly": { "enabled": false },
+      "nodeState": { "uplinkIntervalMs": 8000, "dataRate": 3 }
+    },
+    {
+      "name": "signal-weak",
+      "devEui": "69AE9F1F00060002",
+      "activation": "OTAA",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "nwkKey": "00112233445566778899AABBCCDDEEFF",
+      "anomaly": {
+        "enabled": true,
+        "scenario": "signal-weak",
+        "trigger": "always",
+        "params": {"rssi":-145,"snr":-25}
+      },
+      "nodeState": { "uplinkIntervalMs": 8000, "dataRate": 3 }
+    }
+  ]
+}

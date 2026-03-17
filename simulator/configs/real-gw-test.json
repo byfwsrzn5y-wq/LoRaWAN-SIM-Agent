@@ -1,0 +1,29 @@
+{
+  "description": "Test with real gateway ID",
+  "gatewayEui": "ac1f09fffe1c55d3",
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://10.5.40.109:1883",
+    "clientId": "lorawan-sim-real-gw-001",
+    "topicPrefix": "as923",
+    "marshaler": "protobuf"
+  },
+  "lorawan": {
+    "enabled": true,
+    "activation": "OTAA",
+    "class": "C",
+    "csvImportPath": "configs/adr-10-devices.csv",
+    "appKey": "00112233445566778899AABBCCDDEEFF",
+    "nodeState": {
+      "dataRate": 0,
+      "txPowerIndex": 0,
+      "rssi": -95,
+      "snr": 3
+    }
+  },
+  "uplink": {
+    "enabled": true,
+    "interval": 10000,
+    "region": "AS923-1"
+  }
+}

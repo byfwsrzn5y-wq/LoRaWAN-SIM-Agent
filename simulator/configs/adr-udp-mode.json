@@ -1,0 +1,31 @@
+{
+  "description": "ADR测试 - UDP模式发送到AS923 Gateway Bridge",
+  "gatewayEui": "0203040506070809",
+  "mqtt": {
+    "enabled": false
+  },
+  "udp": {
+    "enabled": true,
+    "lnsHost": "10.5.40.109",
+    "lnsPort": 1702,
+    "udpBindPort": 0
+  },
+  "lorawan": {
+    "enabled": true,
+    "activation": "OTAA",
+    "class": "C",
+    "csvImportPath": "configs/adr-10-devices.csv",
+    "appKey": "00112233445566778899AABBCCDDEEFF",
+    "nodeState": {
+      "dataRate": 0,
+      "txPowerIndex": 0,
+      "rssi": -95,
+      "snr": 3
+    }
+  },
+  "uplink": {
+    "enabled": true,
+    "interval": 10000,
+    "region": "AS923-1"
+  }
+}

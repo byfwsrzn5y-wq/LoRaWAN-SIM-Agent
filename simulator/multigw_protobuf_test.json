@@ -1,0 +1,51 @@
+{
+  "gatewayEui": "0203040506070809",
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://127.0.0.1:1883",
+    "clientId": "multigw-protobuf-test",
+    "mqttTopicPrefix": "as923",
+    "marshaler": "json"
+  },
+  "lorawan": {
+    "enabled": true,
+    "joinEnabled": true
+  },
+  "multiGateway": {
+    "enabled": true,
+    "mode": "overlapping",
+    "gateways": [
+      {
+        "eui": "0203040506070809",
+        "name": "gateway-center",
+        "position": {"x": 0, "y": 0, "z": 30}
+      },
+      {
+        "eui": "020304050607080A",
+        "name": "gateway-east",
+        "position": {"x": 2000, "y": 0, "z": 25}
+      },
+      {
+        "eui": "020304050607080B",
+        "name": "gateway-south",
+        "position": {"x": 0, "y": -1500, "z": 20}
+      }
+    ]
+  },
+  "signalModel": {
+    "enabled": true,
+    "environment": "urban",
+    "txPower": 14
+  },
+  "devices": [
+    {"name": "center-node", "position": {"x": 100, "y": 50, "z": 2}, "lorawan": {"activation": "OTAA", "devEui": "69AE9F1F00010000", "appEui": "0000000000000000", "appKey": "00112233445566778899AABBCCDDEEFF", "nwkKey": "00112233445566778899AABBCCDDEEFF"}},
+    {"name": "east-node", "position": {"x": 1800, "y": 100, "z": 2}, "lorawan": {"activation": "OTAA", "devEui": "69AE9F1F00020000", "appEui": "0000000000000000", "appKey": "00112233445566778899AABBCCDDEEFF", "nwkKey": "00112233445566778899AABBCCDDEEFF"}},
+    {"name": "south-node", "position": {"x": 100, "y": -1200, "z": 2}, "lorawan": {"activation": "OTAA", "devEui": "69AE9F1F00030000", "appEui": "0000000000000000", "appKey": "00112233445566778899AABBCCDDEEFF", "nwkKey": "00112233445566778899AABBCCDDEEFF"}},
+    {"name": "overlap-node", "position": {"x": 800, "y": 400, "z": 2}, "lorawan": {"activation": "OTAA", "devEui": "69AE9F1F00040000", "appEui": "0000000000000000", "appKey": "00112233445566778899AABBCCDDEEFF", "nwkKey": "00112233445566778899AABBCCDDEEFF"}},
+    {"name": "far-node", "position": {"x": 2500, "y": -800, "z": 2}, "lorawan": {"activation": "OTAA", "devEui": "69AE9F1F00050000", "appEui": "0000000000000000", "appKey": "00112233445566778899AABBCCDDEEFF", "nwkKey": "00112233445566778899AABBCCDDEEFF"}}
+  ],
+  "uplink": {
+    "enabled": true,
+    "intervalMs": 5000
+  }
+}

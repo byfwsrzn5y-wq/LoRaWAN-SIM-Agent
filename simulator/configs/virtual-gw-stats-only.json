@@ -1,0 +1,21 @@
+{
+  "description": "虚拟网关 - 仅发送stats",
+  "gatewayEui": "0203040506070809",
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://10.5.40.109:1883",
+    "clientId": "virtual-gw-stats",
+    "topicPrefix": "as923",
+    "marshaler": "protobuf"
+  },
+  "lorawan": {
+    "enabled": false
+  },
+  "uplink": {
+    "enabled": false
+  },
+  "stats": {
+    "enabled": true,
+    "intervalMs": 10000
+  }
+}

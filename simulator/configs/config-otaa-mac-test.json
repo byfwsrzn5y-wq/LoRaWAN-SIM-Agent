@@ -1,0 +1,42 @@
+{
+  "description": "OTAA 单节点 + ChirpStack MAC 协议全量测试",
+  "gatewayEui": "0102030405060708",
+  "lnsHost": "127.0.0.1",
+  "lnsPort": 1700,
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://127.0.0.1:1883",
+    "username": "",
+    "password": "",
+    "clientId": "lorawan-gw-sim-otaa",
+    "clean": true,
+    "qos": 0,
+    "marshaler": "protobuf",
+    "topicPrefix": "as923"
+  },
+  "lorawan": {
+    "enabled": true,
+    "activation": "OTAA",
+    "class": "C",
+    "appEui": "0000000000000001",
+    "devEui": "0102030405060701",
+    "appKey": "00112233445566778899AABBCCDDEEFF",
+    "otaaName": "otaa-mac-test"
+  },
+  "uplink": {
+    "enabled": true,
+    "codec": "simple",
+    "payloadLength": 4,
+    "interval": 60000,
+    "scatterMode": "random",
+    "region": "AS923-1"
+  },
+  "stats": {
+    "enabled": true,
+    "intervalMs": 60000
+  },
+  "controlServer": {
+    "enabled": true,
+    "port": 9999
+  }
+}

@@ -1,0 +1,14 @@
+missing "
+    while executing
+"spawn ssh -o StrictHostKeyChecking=no rak@10.5.40.109 "
+echo \"========================================\"
+echo \"  20分钟稳定性测试结果\"
+ech..."
+extra characters after close-quote
+    while executing
+"missing "
+    while executing
+"spawn ssh -o StrictHostKeyChecking=no rak@10.5.40.109 "
+echo \"========================================\"
+echo \"  20..."
+    (file """ line 1)

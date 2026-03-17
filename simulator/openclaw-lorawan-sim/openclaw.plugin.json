@@ -1,0 +1,45 @@
+{
+  "id": "lorawan_sim",
+  "name": "LoRaWAN Gateway Simulator + ChirpStack v4",
+  "description": "通过 Bot 管理模拟器（启动/停止、配置读写、设备重置、从 ChirpStack 同步设备）并在 ChirpStack v4 中管理网关/设备与下行",
+  "version": "1.1.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "configFile": {
+        "type": "string",
+        "description": "可选。独立配置文件路径（如 ~/.openclaw/lorawan-sim.json），用于存放 projectPath 与 ChirpStack 相关项，避免在 openclaw.json 中写死；支持 ~ 展开。环境变量优先于文件与下文各字段"
+      },
+      "projectPath": {
+        "type": "string",
+        "description": "模拟器项目根目录的绝对路径。建议用 LORAWAN_SIM_PROJECT_PATH 或 configFile 配置，不必写在此处"
+      },
+      "chirpstackBaseUrl": {
+        "type": "string",
+        "description": "ChirpStack REST API 根地址。建议用 CHIRPSTACK_API_URL 或 configFile 配置"
+      },
+      "chirpstackApiToken": {
+        "type": "string",
+        "description": "ChirpStack API 密钥。建议用 CHIRPSTACK_API_TOKEN 或 configFile 配置，勿在 openclaw.json 中写明文"
+      },
+      "chirpstackApplicationId": {
+        "type": "string",
+        "description": "ChirpStack 应用 ID（UUID）。建议用 CHIRPSTACK_APPLICATION_ID 或 configFile 配置"
+      },
+      "chirpstackTenantId": {
+        "type": "string",
+        "description": "ChirpStack 租户 ID（UUID）。建议用 CHIRPSTACK_TENANT_ID 或 configFile 配置"
+      },
+      "chirpstackDeviceProfileId": {
+        "type": "string",
+        "description": "ChirpStack 设备档案 ID（UUID）。建议用 CHIRPSTACK_DEVICE_PROFILE_ID 或 configFile 配置"
+      },
+      "chirpstackApiStyle": {
+        "type": "string",
+        "enum": ["grpc", "rest"],
+        "description": "API 风格：rest 使用 /api/gateways、/api/devices 等路径（ChirpStack REST API v4 常见）；grpc 使用 /api.GatewayService/List 等。不设默认 grpc"
+      }
+    }
+  }
+}

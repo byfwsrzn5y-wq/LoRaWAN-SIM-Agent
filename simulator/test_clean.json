@@ -1,0 +1,34 @@
+{
+  "gatewayEui": "0203040506070809",
+  "lnsHost": "127.0.0.1",
+  "lnsPort": 1702,
+  "mode": "udp",
+  "region": "AS923",
+  "uplinkInterval": 5000,
+  "statsInterval": 30,
+  "stats": {
+    "enabled": true,
+    "intervalMs": 30000
+  },
+  "lorawan": {
+    "enabled": true,
+    "joinEnabled": true
+  },
+  "devices": [
+    {
+      "name": "clean-test-device",
+      "position": {
+        "x": 100,
+        "y": 100,
+        "z": 2
+      },
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "69ae9f1f00020001",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    }
+  ]
+}

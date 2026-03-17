@@ -1,0 +1,280 @@
+{
+  "gatewayEui": "ac1f09fffe1c55d3",
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://127.0.0.1:1883",
+    "clientId": "test-26-otaa-devices",
+    "topicPrefix": "as923",
+    "marshaler": "json"
+  },
+  "lorawan": {
+    "enabled": true,
+    "joinEnabled": true
+  },
+  "devices": [
+    {
+      "name": "otaa-dev-01",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "69AE9F1F00010000",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-02",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "69AE9F1F00020000",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-03",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "69AE9F1F00030000",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-04",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "69AE9F1F00040000",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-05",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "69AE9F1F00050000",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-06",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "69AE9F1F00060000",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-07",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "69AE9F1F00070000",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-08",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "69AE9F1F00080000",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-09",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "69AE9F1F00090000",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-10",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "69AE9F1F000A0000",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-11",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "031FF4070F64E783",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-12",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "6D95562E366E0AB3",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-13",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "5E8FC4C3699745A4",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-14",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "02B5302632A6DEEE",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-15",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "FBA2DF83CA999EC6",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-16",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "58B2ABD4861686CE",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-17",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "61698BE52B5E4C9F",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-18",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "B120031EAF4E8289",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-19",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "C814D8366A203211",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-20",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "B578C8325A3EAF18",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-21",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "181CF26E8E22A646",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-22",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "7029E9D2B11B5F7D",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-23",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "AABBCCDDEEFF0006",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-24",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "AABBCCDDEEFF0007",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-25",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "AABBCCDDEEFF0008",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "otaa-dev-26",
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "AABBCCDDEEFF0009",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    }
+  ],
+  "uplink": {
+    "enabled": true,
+    "intervalMs": 5000
+  }
+}

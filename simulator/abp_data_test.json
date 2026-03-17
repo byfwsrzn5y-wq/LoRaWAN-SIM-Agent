@@ -1,0 +1,30 @@
+{
+  "gatewayEui": "ac1f09fffe1c55d3",
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://127.0.0.1:1883",
+    "clientId": "test-abp-data",
+    "topicPrefix": "as923",
+    "marshaler": "json"
+  },
+  "lorawan": {
+    "enabled": true,
+    "deviceCount": 1
+  },
+  "devices": [
+    {
+      "name": "test-data-01",
+      "lorawan": {
+        "activation": "ABP",
+        "devAddr": "013890e2",
+        "nwkSKey": "71a47656c68723edc799c54306c8c08a",
+        "appSKey": "b6cfdbeba5eda022694ba54d83f7f267",
+        "fCntUp": 0
+      }
+    }
+  ],
+  "uplink": {
+    "enabled": true,
+    "intervalMs": 10000
+  }
+}

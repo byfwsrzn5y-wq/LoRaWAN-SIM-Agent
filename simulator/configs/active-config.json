@@ -1,0 +1,29 @@
+{
+  "description": "Active devices from application",
+  "gatewayEui": "0203040506070809",
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://10.5.40.109:1883",
+    "clientId": "lorawan-active",
+    "clean": true,
+    "qos": 0,
+    "marshaler": "protobuf",
+    "topicPrefix": "as923"
+  },
+  "lorawan": {
+    "enabled": true,
+    "activation": "OTAA",
+    "class": "C",
+    "csvImportPath": "configs/active-devices.csv",
+    "appKey": "00112233445566778899AABBCCDDEEFF"
+  },
+  "uplink": {
+    "enabled": true,
+    "codec": "simple",
+    "payloadLength": 4,
+    "interval": 30000,
+    "scatterMode": "uniform",
+    "region": "AS923-1"
+  },
+  "stats": { "enabled": false }
+}

@@ -1,0 +1,118 @@
+{
+  "gatewayEui": "ac1f09fffe1c55d3",
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://127.0.0.1:1883",
+    "clientId": "multi-gateway-test",
+    "topicPrefix": "as923",
+    "marshaler": "json"
+  },
+  "lorawan": {
+    "enabled": true,
+    "joinEnabled": true
+  },
+  "signalModel": {
+    "enabled": true,
+    "gatewayPosition": { "x": 0, "y": 0, "z": 30 },
+    "environment": "urban",
+    "txPower": 16,
+    "txGain": 2.15,
+    "rxGain": 5.0,
+    "shadowFadingStd": 8,
+    "fastFadingEnabled": true
+  },
+  "multiGateway": {
+    "enabled": true,
+    "mode": "overlapping",
+    "primaryGateway": "ac1f09fffe1c55d3",
+    "gateways": [
+      {
+        "eui": "ac1f09fffe1c55d3",
+        "name": "main-gateway",
+        "position": { "x": 0, "y": 0, "z": 30 },
+        "rxGain": 5.0,
+        "rxSensitivity": -137
+      },
+      {
+        "eui": "ac1f09fffe1c55d4",
+        "name": "suburban-gateway",
+        "position": { "x": 1500, "y": 800, "z": 15 },
+        "rxGain": 3.0,
+        "rxSensitivity": -134
+      },
+      {
+        "eui": "ac1f09fffe1c55d5",
+        "name": "indoor-gateway",
+        "position": { "x": 800, "y": -400, "z": 3 },
+        "rxGain": 2.0,
+        "rxSensitivity": -130
+      }
+    ]
+  },
+  "devices": [
+    {
+      "name": "near-main-gw",
+      "description": "靠近主网关，只有主网关能收到",
+      "position": { "x": 200, "y": 100, "z": 2 },
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "69AE9F1F00010000",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "overlap-zone",
+      "description": "重叠区域，多个网关都能收到",
+      "position": { "x": 600, "y": 200, "z": 2 },
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "69AE9F1F00020000",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "far-suburban",
+      "description": "靠近郊区网关",
+      "position": { "x": 1400, "y": 700, "z": 2 },
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "69AE9F1F00030000",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "indoor-area",
+      "description": "室内区域，靠近室内网关",
+      "position": { "x": 750, "y": -350, "z": 2 },
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "69AE9F1F00040000",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    },
+    {
+      "name": "edge-device",
+      "description": "边缘设备，可能所有网关都收不到",
+      "position": { "x": 2500, "y": 1000, "z": 2 },
+      "lorawan": {
+        "activation": "OTAA",
+        "devEui": "69AE9F1F00050000",
+        "appEui": "0000000000000000",
+        "appKey": "00112233445566778899AABBCCDDEEFF",
+        "nwkKey": "00112233445566778899AABBCCDDEEFF"
+      }
+    }
+  ],
+  "uplink": {
+    "enabled": true,
+    "intervalMs": 5000
+  }
+}

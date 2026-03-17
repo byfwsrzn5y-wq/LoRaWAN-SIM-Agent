@@ -1,0 +1,29 @@
+{
+  "description": "MAC命令ADR测试 - 使用绝对路径",
+  "gatewayEui": "0203040506070809",
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://10.5.40.109:1883",
+    "clientId": "lorawan-mac-absolute",
+    "topicPrefix": "as923"
+  },
+  "lorawan": {
+    "enabled": true,
+    "activation": "OTAA",
+    "class": "C",
+    "csvImportPath": "/Users/yunfeixia/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian/1. Projects/RAK/2RAK网关类产品/lorawan_gateway_sim/configs/mac-test-devices.csv",
+    "appKey": "00112233445566778899AABBCCDDEEFF",
+    "joinEui": "0000000000000000",
+    "nodeState": {
+      "dataRate": 0,
+      "txPowerIndex": 0,
+      "rssi": -95,
+      "snr": 3
+    }
+  },
+  "uplink": {
+    "enabled": true,
+    "interval": 8000,
+    "region": "AS923-1"
+  }
+}

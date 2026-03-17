@@ -1,0 +1,29 @@
+{
+  "description": "使用自己的网关ID测试",
+  "gatewayEui": "0203040506070809",
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://10.5.40.109:1883",
+    "clientId": "lorawan-sim-own-gw",
+    "topicPrefix": "as923",
+    "marshaler": "protobuf"
+  },
+  "lorawan": {
+    "enabled": true,
+    "activation": "OTAA",
+    "class": "C",
+    "csvImportPath": "configs/adr-10-devices.csv",
+    "appKey": "00112233445566778899AABBCCDDEEFF",
+    "nodeState": {
+      "dataRate": 0,
+      "txPowerIndex": 0,
+      "rssi": -95,
+      "snr": 3
+    }
+  },
+  "uplink": {
+    "enabled": true,
+    "interval": 10000,
+    "region": "AS923-1"
+  }
+}

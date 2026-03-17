@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Simulator runtime
+.sim.pid
+fcnt_state.json
+configs/synced-from-chirpstack.csv
+
+# Logs & env
+*.log
+.env
+.env.local
+
+# OS / Editor
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Optional: keep synced CSV if you want to commit it
+# !configs/synced-from-chirpstack.csv

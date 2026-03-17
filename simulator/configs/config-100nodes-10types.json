@@ -1,0 +1,45 @@
+{
+  "description": "随机 100 个节点，仅从指定的 10 种行为中随机匹配（3 正常 + 7 异常），可任意改 deviceCount 与 behaviorTemplateList 种类数",
+  "gatewayEui": "0102030405060708",
+  "lnsHost": "127.0.0.1",
+  "lnsPort": 1700,
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://127.0.0.1:1883",
+    "clientId": "lorawan-gw-sim-100n",
+    "clean": true,
+    "qos": 0,
+    "marshaler": "protobuf",
+    "topicPrefix": "as923"
+  },
+  "lorawan": {
+    "enabled": true,
+    "activation": "OTAA",
+    "appEuiStart": "0000000000000001",
+    "devEuiStart": "0102030405060701",
+    "appKey": "00112233445566778899AABBCCDDEEFF",
+    "randomBehaviors": true,
+    "deviceCount": 100,
+    "behaviorTemplatesFile": "configs/behavior-templates.json",
+    "behaviorTemplateList": [
+      "normal-near",
+      "normal-mid",
+      "normal-far",
+      "bad-snr-1",
+      "rejoin-5s",
+      "good-sf7-adr-fail",
+      "high-rate-confirmed",
+      "mac-heavy",
+      "lossy",
+      "channel-single"
+    ]
+  },
+  "uplink": {
+    "enabled": true,
+    "codec": "simple",
+    "payloadLength": 4,
+    "interval": 30000,
+    "region": "AS923-1"
+  },
+  "controlServer": { "enabled": true, "port": 9999 }
+}

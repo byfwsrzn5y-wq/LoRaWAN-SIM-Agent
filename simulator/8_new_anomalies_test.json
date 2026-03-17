@@ -1,0 +1,175 @@
+{
+  "gatewayEui": "0203040506070809",
+  "stats": {
+    "enabled": true,
+    "intervalMs": 30000
+  },
+  "lorawan": {
+    "enabled": true,
+    "joinEnabled": true,
+    "region": "AS923",
+    "appKey": "00112233445566778899AABBCCDDEEFF",
+    "nwkKey": "00112233445566778899AABBCCDDEEFF"
+  },
+  "uplink": {
+    "enabled": true,
+    "intervalMs": 10000
+  },
+  "udpMode": true,
+  "lnsHost": "127.0.0.1",
+  "lnsPort": 1702,
+  "devices": [
+    {
+      "name": "node-wrong-devaddr",
+      "devEui": "69AE9F1F00040001",
+      "activation": "OTAA",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "nwkKey": "00112233445566778899AABBCCDDEEFF",
+      "anomaly": {
+        "enabled": true,
+        "scenario": "wrong-devaddr",
+        "trigger": "every-2nd-uplink",
+        "params": {
+          "devaddr": "DEADBEEF"
+        }
+      },
+      "nodeState": {
+        "uplinkIntervalMs": 10000,
+        "dataRate": 3
+      }
+    },
+    {
+      "name": "node-invalid-freq",
+      "devEui": "69AE9F1F00040002",
+      "activation": "OTAA",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "nwkKey": "00112233445566778899AABBCCDDEEFF",
+      "anomaly": {
+        "enabled": true,
+        "scenario": "invalid-frequency",
+        "trigger": "always",
+        "params": {
+          "freq": 868.1
+        }
+      },
+      "nodeState": {
+        "uplinkIntervalMs": 10000,
+        "dataRate": 3
+      }
+    },
+    {
+      "name": "node-invalid-dr",
+      "devEui": "69AE9F1F00040003",
+      "activation": "OTAA",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "nwkKey": "00112233445566778899AABBCCDDEEFF",
+      "anomaly": {
+        "enabled": true,
+        "scenario": "invalid-datarate",
+        "trigger": "always",
+        "params": {
+          "dr": 15
+        }
+      },
+      "nodeState": {
+        "uplinkIntervalMs": 10000,
+        "dataRate": 3
+      }
+    },
+    {
+      "name": "node-mic-wrong-key",
+      "devEui": "69AE9F1F00040004",
+      "activation": "OTAA",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "nwkKey": "00112233445566778899AABBCCDDEEFF",
+      "anomaly": {
+        "enabled": true,
+        "scenario": "mic-wrong-key",
+        "trigger": "always",
+        "params": {
+          "key": "FFEEDDCCBBAA99887766554433221100"
+        }
+      },
+      "nodeState": {
+        "uplinkIntervalMs": 10000,
+        "dataRate": 3
+      }
+    },
+    {
+      "name": "node-burst-traffic",
+      "devEui": "69AE9F1F00040005",
+      "activation": "OTAA",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "nwkKey": "00112233445566778899AABBCCDDEEFF",
+      "anomaly": {
+        "enabled": true,
+        "scenario": "burst-traffic",
+        "trigger": "every-5th-uplink",
+        "params": {
+          "burstCount": 5,
+          "burstIntervalMs": 500
+        }
+      },
+      "nodeState": {
+        "uplinkIntervalMs": 10000,
+        "dataRate": 3
+      }
+    },
+    {
+      "name": "node-adr-reject",
+      "devEui": "69AE9F1F00040006",
+      "activation": "OTAA",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "nwkKey": "00112233445566778899AABBCCDDEEFF",
+      "anomaly": {
+        "enabled": true,
+        "scenario": "adr-reject",
+        "trigger": "always",
+        "params": {}
+      },
+      "nodeState": {
+        "uplinkIntervalMs": 10000,
+        "dataRate": 3,
+        "adr": true
+      }
+    },
+    {
+      "name": "node-single-channel",
+      "devEui": "69AE9F1F00040007",
+      "activation": "OTAA",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "nwkKey": "00112233445566778899AABBCCDDEEFF",
+      "anomaly": {
+        "enabled": true,
+        "scenario": "single-channel",
+        "trigger": "always",
+        "params": {
+          "channel": 0
+        }
+      },
+      "nodeState": {
+        "uplinkIntervalMs": 10000,
+        "dataRate": 3
+      }
+    },
+    {
+      "name": "node-duty-cycle-violation",
+      "devEui": "69AE9F1F00040008",
+      "activation": "OTAA",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "nwkKey": "00112233445566778899AABBCCDDEEFF",
+      "anomaly": {
+        "enabled": true,
+        "scenario": "duty-cycle-violation",
+        "trigger": "always",
+        "params": {
+          "dutyCyclePercent": 5.0
+        }
+      },
+      "nodeState": {
+        "uplinkIntervalMs": 1000,
+        "dataRate": 3
+      }
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "description": "MAC命令ADR测试 - 使用working-dev-01",
+  "gatewayEui": "0203040506070809",
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://10.5.40.109:1883",
+    "clientId": "lorawan-mac-test",
+    "topicPrefix": "as923"
+  },
+  "lorawan": {
+    "enabled": true,
+    "activation": "OTAA",
+    "class": "C",
+    "csvImportPath": "configs/mac-test-devices.csv",
+    "appKey": "00112233445566778899AABBCCDDEEFF",
+    "nodeState": {
+      "dataRate": 0,
+      "txPowerIndex": 0,
+      "rssi": -95,
+      "snr": 3
+    }
+  },
+  "uplink": {
+    "enabled": true,
+    "interval": 8000,
+    "region": "AS923-1"
+  },
+  "controlServer": {
+    "enabled": true,
+    "port": 9998
+  }
+}

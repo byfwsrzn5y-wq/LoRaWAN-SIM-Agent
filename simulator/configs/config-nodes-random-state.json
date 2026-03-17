@@ -1,0 +1,42 @@
+{
+  "description": "多节点 + 每节点随机初始状态（信道/功率/信号范围）",
+  "gatewayEui": "0102030405060708",
+  "lnsHost": "127.0.0.1",
+  "lnsPort": 1700,
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://127.0.0.1:1883",
+    "clientId": "lorawan-gw-sim-random-state",
+    "clean": true,
+    "qos": 0,
+    "marshaler": "protobuf",
+    "topicPrefix": "as923"
+  },
+  "lorawan": {
+    "enabled": true,
+    "activation": "ABP",
+    "class": "C",
+    "deviceCount": 10,
+    "devAddrStart": "26011101",
+    "devEuiStart": "0102030405060701",
+    "nwkSKey": "00112233445566778899AABBCCDDEEFF",
+    "appSKey": "8899AABBCCDDEEFF0011223344556677",
+    "nodeState": {
+      "random": true,
+      "rssiRange": [-92, -78],
+      "snrRange": [3, 8],
+      "txPowerIndexRange": [0, 4],
+      "rssiJitter": 1.5,
+      "snrJitter": 0.6
+    }
+  },
+  "uplink": {
+    "enabled": true,
+    "codec": "simple",
+    "payloadLength": 4,
+    "interval": 60000,
+    "scatterMode": "uniform",
+    "region": "AS923-1"
+  },
+  "stats": { "enabled": true, "intervalMs": 60000 }
+}

@@ -1,0 +1,23 @@
+{
+  "description": "MAC命令测试",
+  "gatewayEui": "0203040506070809",
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://10.5.40.109:1883",
+    "clientId": "lorawan-mac-test",
+    "topicPrefix": "as923"
+  },
+  "lorawan": {
+    "enabled": true,
+    "activation": "OTAA",
+    "class": "C",
+    "csvImportPath": "configs/working-devices.csv",
+    "appKey": "00112233445566778899AABBCCDDEEFF"
+  },
+  "uplink": {
+    "enabled": true,
+    "interval": 20000,
+    "region": "AS923-1"
+  },
+  "stats": { "enabled": true, "interval": 30 }
+}

@@ -1,0 +1,34 @@
+{
+  "description": "从行为模板池中随机匹配节点：deviceCount 个 OTAA 设备，每个随机选用 configs/behavior-templates.json 中的一条模板",
+  "gatewayEui": "0102030405060708",
+  "lnsHost": "127.0.0.1",
+  "lnsPort": 1700,
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://127.0.0.1:1883",
+    "clientId": "lorawan-gw-sim-random",
+    "clean": true,
+    "qos": 0,
+    "marshaler": "protobuf",
+    "topicPrefix": "as923"
+  },
+  "lorawan": {
+    "enabled": true,
+    "activation": "OTAA",
+    "appEuiStart": "0000000000000001",
+    "devEuiStart": "0102030405060701",
+    "appKey": "00112233445566778899AABBCCDDEEFF",
+    "randomBehaviors": true,
+    "deviceCount": 20,
+    "behaviorTemplatesFile": "configs/behavior-templates.json",
+    "behaviorTemplateList": "all"
+  },
+  "uplink": {
+    "enabled": true,
+    "codec": "simple",
+    "payloadLength": 4,
+    "interval": 30000,
+    "region": "AS923-1"
+  },
+  "controlServer": { "enabled": true, "port": 9999 }
+}
