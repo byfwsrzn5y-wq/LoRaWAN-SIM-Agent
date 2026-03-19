@@ -1,4 +1,4 @@
-//**
+/**
  * Config Loader Module
  * Configuration loading, validation and normalization
  */
