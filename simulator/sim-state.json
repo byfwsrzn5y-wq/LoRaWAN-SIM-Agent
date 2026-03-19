@@ -7,11 +7,31 @@
     }
   ],
   "nodes": [],
-  "config": {},
+  "config": {
+    "signalModel": {
+      "enabled": true,
+      "environment": "urban",
+      "txPower": 16,
+      "txGain": 2.15,
+      "rxGain": 5,
+      "shadowFadingStd": 8,
+      "fastFadingEnabled": true
+    },
+    "environment": [
+      {
+        "id": "indoor-zone-1",
+        "type": "indoor"
+      },
+      {
+        "id": "dense-urban-zone",
+        "type": "dense-urban"
+      }
+    ]
+  },
   "stats": {
     "uplinks": 0,
-    "joins": 0,
+    "joins": 4,
     "errors": 0
   },
-  "lastUpdate": "2026-03-19T03:00:03.584Z"
+  "lastUpdate": "2026-03-19T15:40:01.123Z"
 }

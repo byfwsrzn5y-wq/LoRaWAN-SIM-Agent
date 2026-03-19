@@ -102,6 +102,9 @@ class LorawanSimulator {
           this.movementEngines.set(device.devEui, movementEngine);
           device.currentPosition = movementEngine.currentPosition;
           console.log(`[Movement] ${device.name}: ${finalConfig.movement.type} movement initialized`);
+        } else {
+          // For stationary devices, set default position
+          device.currentPosition = { x: 0, y: 0, z: 2 };
         }
         
         // Initialize node state
@@ -183,6 +186,12 @@ class LorawanSimulator {
           currentPosition = movementEngine.update();
           device.currentPosition = currentPosition;
           velocity = movementEngine.getVelocity();
+        } else {
+          // For stationary devices, use default position if not set
+          if (!currentPosition) {
+            currentPosition = { x: 0, y: 0, z: 2 };
+            device.currentPosition = currentPosition;
+          }
         }
         
         // Check environment
