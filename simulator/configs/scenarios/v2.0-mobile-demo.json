@@ -1,0 +1,154 @@
+{
+  "scenario": "v2.0-mobile-node-demo",
+  "description": "演示节点移动、环境切换和派生异常的v2.0示例场景",
+  "gatewayEui": "0203040506070809",
+  "lnsHost": "127.0.0.1",
+  "lnsPort": 1702,
+  
+  "region": "AS923-1",
+  "channels": [923.2, 923.4, 923.6, 923.8, 924.0, 924.2, 924.4, 924.6],
+  
+  "signalModel": {
+    "enabled": true,
+    "environment": "urban",
+    "txPower": 16,
+    "txGain": 2.15,
+    "rxGain": 5.0,
+    "shadowFadingStd": 8,
+    "fastFadingEnabled": true
+  },
+  
+  "environment": {
+    "defaultEnvironment": "urban",
+    "zones": [
+      {
+        "id": "indoor-zone-1",
+        "type": "indoor",
+        "geometry": {
+          "type": 0,
+          "center": { "x": 500, "y": 0, "z": 2 },
+          "radius": 100
+        }
+      },
+      {
+        "id": "dense-urban-zone",
+        "type": "dense-urban",
+        "geometry": {
+          "type": 1,
+          "bounds": {
+            "xMin": 200,
+            "xMax": 400,
+            "yMin": -100,
+            "yMax": 100
+          }
+        }
+      }
+    ],
+    "events": [
+      {
+        "type": "enter-building",
+        "trigger": { "position": { "x": 500, "y": 0 } },
+        "effect": {
+          "environment": "indoor",
+          "transitionDuration": 10
+        }
+      }
+    ]
+  },
+  
+  "derivedAnomalies": {
+    "signal-weak": {
+      "enabled": true,
+      "trigger": { "rssi": "< -120", "duration": { "value": "30s" } },
+      "probability": 0.8
+    },
+    "signal-critical": {
+      "enabled": true,
+      "trigger": { "rssi": "< -135" },
+      "probability": 0.9
+    },
+    "doppler-shift": {
+      "enabled": true,
+      "trigger": { "velocity": "> 10" },
+      "probability": 1.0
+    }
+  },
+  
+  "devices": [
+    {
+      "name": "mobile-sensor-1",
+      "devEui": "0102030405060701",
+      "joinEui": "0000000000000000",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "activationMode": "otaa",
+      "movement": {
+        "type": "linear",
+        "linear": {
+          "startPosition": { "x": 0, "y": 0, "z": 2 },
+          "endPosition": { "x": 1000, "y": 0, "z": 2 },
+          "duration": 1800,
+          "loop": true
+        }
+      },
+      "uplink": {
+        "interval": 10000,
+        "payloadLength": 12,
+        "fPort": 1,
+        "confirmed": false
+      }
+    },
+    {
+      "name": "mobile-sensor-2",
+      "devEui": "0102030405060702",
+      "joinEui": "0000000000000000",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "activationMode": "otaa",
+      "movement": {
+        "type": "random",
+        "random": {
+          "initialPosition": { "x": 300, "y": 200, "z": 2 },
+          "speed": 2.0,
+          "directionChangeInterval": 30,
+          "boundary": {
+            "x": [0, 800],
+            "y": [-200, 200]
+          }
+        }
+      },
+      "uplink": {
+        "interval": 15000,
+        "payloadLength": 8,
+        "fPort": 2
+      }
+    },
+    {
+      "name": "stationary-sensor",
+      "devEui": "0102030405060703",
+      "joinEui": "0000000000000000",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "activationMode": "otaa",
+      "nodeState": {
+        "rssi": -80,
+        "snr": 8,
+        "channels": [923.2, 923.4]
+      },
+      "uplink": {
+        "interval": 30000,
+        "payloadLength": 16,
+        "fPort": 3
+      }
+    }
+  ],
+  
+  "lorawan": {
+    "spreadingFactor": 7,
+    "bandwidth": 125000,
+    "codingRate": "4/5"
+  },
+  
+  "visualizer": {
+    "enabled": true,
+    "stateIntervalMs": 1000,
+    "stateFile": "sim-state.json"
+  }
+}
