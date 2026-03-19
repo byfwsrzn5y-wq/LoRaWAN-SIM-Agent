@@ -11,10 +11,10 @@
     "signalModel": {
       "enabled": true,
       "environment": "urban",
-      "txPower": 16,
+      "txPower": 10,
       "txGain": 2.15,
       "rxGain": 5,
-      "shadowFadingStd": 8,
+      "shadowFadingStd": 15,
       "fastFadingEnabled": true
     },
     "environment": [
@@ -30,8 +30,8 @@
   },
   "stats": {
     "uplinks": 0,
-    "joins": 4,
+    "joins": 18,
     "errors": 0
   },
-  "lastUpdate": "2026-03-19T15:40:01.123Z"
+  "lastUpdate": "2026-03-19T15:40:34.192Z"
 }
