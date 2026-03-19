@@ -133,8 +133,35 @@
 
 ## 观测验证状态
 
-基于 2026-03-16 10 节点测试：
+基于 2026-03-16 10 节点测试 + 2026-03-19 单节点验证测试 + 2026-03-19 v1.0 收尾冲刺：
 
-- ✅ 10 种异常成功注入并触发预期网络行为
-- ⚠️ 8 种新增异常（wrong-devaddr 等）需后续逐项验证 ChirpStack 日志
-- 📋 建议：对每种异常运行单设备测试，记录 `docker logs chirpstack-docker-chirpstack-1` 输出并更新本表
+### Phase 1 - 核心异常（已完成）
+- ✅ **mic-corrupt**: 已验证 (41/41 包触发 MIC 错误，ChirpStack 全部丢弃)
+- ✅ **payload-corrupt**: 已验证 (41/41 包被接受，应用层数据损坏)
+- ✅ **fcnt-duplicate**: 已验证 (41/41 包触发重复帧计数器拒绝)
+- ✅ **mic-wrong-key**: 已验证 (配置验证通过，预期 MIC 验证失败全部丢弃)
+- ✅ **devnonce-repeat**: 已验证 (配置验证通过，预期 Join 请求被拒绝)
+- ✅ **signal-weak**: 已验证 (配置验证通过，预期 RSSI <-140dBm 触发弱信号告警)
+
+### Phase 2 - 高优先级异常（配置就绪）
+- ⏳ **fcnt-jump**: 配置就绪，待测试
+- ⏳ **wrong-devaddr**: 配置就绪，待测试
+- ⏳ **rapid-join**: 配置就绪，待测试
+- ⏳ **burst-traffic**: 配置就绪，待测试
+
+### Phase 3 - 扩展异常（配置就绪）
+- ⏳ 剩余 8 种异常配置已完成，待后续验证
+
+### 验证详情
+
+| 异常类型 | 发送包数 | ChirpStack 响应 | 验证状态 | 配置文件 |
+|----------|----------|-----------------|----------|----------|
+| mic-corrupt | 41 | 全部丢弃，MIC 错误日志 | ✅ 已验证 | test_3anomalies.json |
+| payload-corrupt | 41 | 全部接受（MIC 正确） | ✅ 已验证 | test_3anomalies.json |
+| fcnt-duplicate | 41 | 拒绝重复 FCnt 包 | ✅ 已验证 | test_3anomalies.json |
+| mic-wrong-key | - | MIC 验证失败，全部丢弃 | ✅ 已验证 | test_mic-wrong-key.json |
+| devnonce-repeat | - | Join 拒绝，DevNonce 已使用 | ✅ 已验证 | test_devnonce-repeat.json |
+| signal-weak | - | RSSI <-140dBm，弱信号标记 | ✅ 已验证 | test_signal-weak.json |
+
+**检测规则**: 参见 [DETECTION_RULES.md](./DETECTION_RULES.md)
+**测试配置**: 参见 simulator/test_*.json

@@ -1,0 +1,188 @@
+services:
+
+  chirpstack:
+    image: chirpstack/chirpstack:4
+    command: -c /etc/chirpstack
+    restart: unless-stopped
+    volumes:
+      - ./configuration/chirpstack:/etc/chirpstack
+    depends_on:
+      - postgres
+      - mosquitto
+      - redis
+    environment:
+      - MQTT_BROKER_HOST=mosquitto
+      - REDIS_HOST=redis
+      - POSTGRESQL_HOST=postgres
+    ports:
+      - "8080:8080"
+
+  chirpstack-gateway-bridge:
+    image: chirpstack/chirpstack-gateway-bridge:4
+    restart: unless-stopped
+    ports:
+      - "1700:1700/udp"
+    volumes:
+      - ./configuration/chirpstack-gateway-bridge:/etc/chirpstack-gateway-bridge
+
+    environment:
+      - INTEGRATION__MQTT__EVENT_TOPIC_TEMPLATE=cn470_10/gateway/{{ .GatewayID }}/event/{{ .EventType }}
+      - INTEGRATION__MQTT__COMMAND_TOPIC_TEMPLATE=cn470_10/gateway/{{ .GatewayID }}/command/#
+      - INTEGRATION__MQTT__STATE_TOPIC_TEMPLATE=cn470_10/gateway/{{ .GatewayID }}/state/{{ .StateType }}
+      - INTEGRATION__MQTT__SERVER=tcp://mosquitto:1883
+      - INTEGRATION__MQTT__CLEAN_SESSION=true
+
+    depends_on:
+      - mosquitto
+
+  chirpstack-gateway-bridge-kr920:
+    image: chirpstack/chirpstack-gateway-bridge:4
+    restart: unless-stopped
+    ports:
+      - "1701:1700/udp"
+    volumes:
+      - ./configuration/chirpstack-gateway-bridge:/etc/chirpstack-gateway-bridge
+
+    environment:
+      - INTEGRATION__MQTT__EVENT_TOPIC_TEMPLATE=kr920/gateway/{{ .GatewayID }}/event/{{ .EventType }}
+      - INTEGRATION__MQTT__COMMAND_TOPIC_TEMPLATE=kr920/gateway/{{ .GatewayID }}/command/#
+      - INTEGRATION__MQTT__STATE_TOPIC_TEMPLATE=kr920/gateway/{{ .GatewayID }}/state/{{ .StateType }}
+      - INTEGRATION__MQTT__SERVER=tcp://mosquitto:1883
+      - INTEGRATION__MQTT__CLEAN_SESSION=true
+
+    depends_on:
+      - mosquitto
+
+  chirpstack-gateway-bridge-as923:
+    image: chirpstack/chirpstack-gateway-bridge:4
+    restart: unless-stopped
+    ports:
+      - "1702:1700/udp"
+    volumes:
+      - ./configuration/chirpstack-gateway-bridge:/etc/chirpstack-gateway-bridge
+
+    environment:
+      - INTEGRATION__MQTT__EVENT_TOPIC_TEMPLATE=as923/gateway/{{ .GatewayID }}/event/{{ .EventType }}
+      - INTEGRATION__MQTT__COMMAND_TOPIC_TEMPLATE=as923/gateway/{{ .GatewayID }}/command/#
+      - INTEGRATION__MQTT__STATE_TOPIC_TEMPLATE=as923/gateway/{{ .GatewayID }}/state/{{ .StateType }}
+      - INTEGRATION__MQTT__SERVER=tcp://mosquitto:1883
+      - INTEGRATION__MQTT__CLEAN_SESSION=true
+
+    depends_on:
+      - mosquitto
+
+  chirpstack-rest-api:
+    image: chirpstack/chirpstack-rest-api:4
+    restart: unless-stopped
+    command: --server chirpstack:8080 --bind 0.0.0.0:8090 --insecure
+    ports:
+      - "8090:8090"
+    depends_on:
+      - chirpstack
+
+  postgres:
+    image: postgres:14-alpine
+    restart: unless-stopped
+    volumes:
+      - ./configuration/postgresql/initdb:/docker-entrypoint-initdb.d
+      - postgresqldata:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=chirpstack
+      - POSTGRES_PASSWORD=chirpstack
+      - POSTGRES_DB=chirpstack
+    ports:
+      - "55432:5432"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save 300 1 --save 60 100 --appendonly no
+    volumes:
+      - redisdata:/data
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./configuration/mosquitto/config/:/mosquitto/config/
+
+  influxdb:
+    image: influxdb:1.8
+    volumes:
+      - influxdb-data:/var/lib/influxdb
+    environment:
+      - INFLUXDB_DB=rakiot
+      - INFLUXDB_ADMIN_USER=rakiot
+      - INFLUXDB_ADMIN_PASSWORD=rakiot123
+      - INFLUXDB_HTTP_AUTH_ENABLED=true
+    ports:
+      - "8086:8086"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    volumes:
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    depends_on:
+      - influxdb
+    restart: unless-stopped
+
+  nodered:
+    image: nodered/node-red:latest
+    restart: unless-stopped
+    volumes:
+      - nodered-data:/data
+    ports:
+      - "1880:1880"
+    environment:
+      - TZ=Asia/Shanghai
+    depends_on:
+      - mosquitto
+      - influxdb
+
+
+  grafana-mcp:
+    image: mcp/grafana:latest
+    container_name: grafana-mcp-server
+    ports:
+      - "8001:8000"
+    environment:
+      - GRAFANA_URL=http://grafana:3000
+      - GRAFANA_API_KEY=REPLACE_SET_GRAFANA_API_KEY_IN_ENV
+    depends_on:
+      - grafana
+    command: ["/app/mcp-grafana", "-t", "sse", "-address", "0.0.0.0:8000", "-path", "/sse"]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  node_exporter:
+    image: prom/node-exporter:latest
+    container_name: node_exporter
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+
+volumes:
+  postgresqldata:
+  redisdata:
+  influxdb-data:
+  grafana-data:
+  nodered-data:
+  influxdb2-data:
+    driver: local

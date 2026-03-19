@@ -24,15 +24,15 @@
     },
     {
       "name": "rapid-join",
-      "devEui": "69AE9F1F00060002",
+      "devEui": "69AE9F1F00060006",
       "activation": "OTAA",
       "appKey": "00112233445566778899AABBCCDDEEFF",
       "nwkKey": "00112233445566778899AABBCCDDEEFF",
       "anomaly": {
         "enabled": true,
         "scenario": "rapid-join",
-        "trigger": "on-join-accept",
-        "params": {"rejoinDelayMs":5000}
+        "trigger": "always",
+        "params": {"rejoinIntervalMs": 30000}
       },
       "nodeState": { "uplinkIntervalMs": 8000, "dataRate": 3 }
     }

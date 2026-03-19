@@ -1,0 +1,65 @@
+{
+  "gatewayEui": "0203040506070809",
+  "stats": {
+    "enabled": true,
+    "intervalMs": 30000
+  },
+  "lorawan": {
+    "enabled": true,
+    "joinEnabled": true,
+    "region": "AS923",
+    "appKey": "00112233445566778899AABBCCDDEEFF",
+    "nwkKey": "00112233445566778899AABBCCDDEEFF"
+  },
+  "uplink": {
+    "enabled": true,
+    "intervalMs": 10000
+  },
+  "udpMode": true,
+  "lnsHost": "chirpstack-docker-chirpstack-gateway-bridge-1",
+  "lnsPort": 1700,
+  "devices": [
+    {
+      "name": "mic-corrupt",
+      "devEui": "69AE9F1F00050001",
+      "activation": "OTAA",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "nwkKey": "00112233445566778899AABBCCDDEEFF",
+      "anomaly": {
+        "enabled": true,
+        "scenario": "mic-corrupt",
+        "trigger": "always",
+        "params": { "bitFlip": 4 }
+      },
+      "nodeState": { "uplinkIntervalMs": 10000, "dataRate": 3 }
+    },
+    {
+      "name": "payload-corrupt",
+      "devEui": "69AE9F1F00050002",
+      "activation": "OTAA",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "nwkKey": "00112233445566778899AABBCCDDEEFF",
+      "anomaly": {
+        "enabled": true,
+        "scenario": "payload-corrupt",
+        "trigger": "random-30-percent",
+        "params": {}
+      },
+      "nodeState": { "uplinkIntervalMs": 10000, "dataRate": 3 }
+    },
+    {
+      "name": "fcnt-duplicate",
+      "devEui": "69AE9F1F00050003",
+      "activation": "OTAA",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "nwkKey": "00112233445566778899AABBCCDDEEFF",
+      "anomaly": {
+        "enabled": true,
+        "scenario": "fcnt-duplicate",
+        "trigger": "every-3rd-uplink",
+        "params": {}
+      },
+      "nodeState": { "uplinkIntervalMs": 10000, "dataRate": 3 }
+    }
+  ]
+}

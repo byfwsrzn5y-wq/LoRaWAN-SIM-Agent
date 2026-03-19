@@ -39,6 +39,37 @@ const PKT = {
   TX_ACK: 0x05,
 };
 
+// ===== 状态输出模块 (for Visualizer) =====
+const SIM_STATE_FILE = path.join(__dirname, 'sim-state.json');
+let simState = {
+  running: false,
+  gateways: [],
+  nodes: [],
+  config: {},
+  stats: { uplinks: 0, joins: 0, errors: 0 },
+  lastUpdate: null
+};
+
+function updateSimState(updates) {
+  Object.assign(simState, updates);
+  simState.lastUpdate = new Date().toISOString();
+}
+
+function writeSimState() {
+  try {
+    fs.writeFileSync(SIM_STATE_FILE, JSON.stringify(simState, null, 2));
+  } catch (e) {
+    // 忽略写入错误
+  }
+}
+
+function startStateExporter(intervalMs = 1000) {
+  setInterval(() => {
+    writeSimState();
+  }, intervalMs);
+}
+// ===== 状态输出模块结束 =====
+
 const REGIONS = {
   'AS923-1': {
     channels: [
@@ -1833,6 +1864,26 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
             if (lorawanDevice && mqttEnabled) {
               trackUplinkSent(payloadOut, devAddr, devEuiUp, fCnt, confirmed, (uplinkCfg.lorawan && uplinkCfg.lorawan.fPort) || 1);
             }
+            // 更新可视化状态
+            simState.stats.uplinks = uplinkCount;
+            if (lorawanDevice) {
+              const existingNode = simState.nodes.find(n => n.eui === devEuiUp);
+              const newNode = {
+                eui: devEuiUp,
+                name: label || devEuiUp.slice(-4),
+                devAddr: devAddr,
+                fCnt: fCnt,
+                joined: lorawanDevice.joined,
+                rssi: lorawanDevice.nodeState?.rssi || existingNode?.rssi || -80,
+                snr: lorawanDevice.nodeState?.snr || existingNode?.snr || 5,
+                uplinks: uplinkCount,
+                position: lorawanDevice.position,
+                anomaly: lorawanDevice.anomaly
+              };
+              const idx = simState.nodes.findIndex(n => n.eui === devEuiUp);
+              if (idx >= 0) simState.nodes[idx] = newNode;
+              else simState.nodes.push(newNode);
+            }
           }
         });
       }
@@ -2263,6 +2314,24 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
   }
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+
+  // ===== 启动状态导出器 =====
+  const stateIntervalMs = config.visualizer?.stateIntervalMs || 1000;
+  startStateExporter(stateIntervalMs);
+  
+  // 初始化状态
+  updateSimState({
+    running: true,
+    gateways: config.multiGateway?.enabled ? config.multiGateway.gateways : [{ eui: config.gatewayEui, name: 'default-gateway' }],
+    config: {
+      signalModel: config.signalModel,
+      multiGateway: config.multiGateway
+    },
+    stats: { uplinks: 0, joins: 0, errors: 0 }
+  });
+  console.log(`[Visualizer] State exporter started (interval: ${stateIntervalMs}ms)`);
+  console.log(`[Visualizer] Open http://localhost:3030 to view`);
+  // ===== 状态导出器结束 =====
 
   console.log('\n[✓] LoRaWAN Gateway Simulator started (standalone). Press Ctrl+C to stop.\n');
 }

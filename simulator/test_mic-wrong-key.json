@@ -24,7 +24,7 @@
     },
     {
       "name": "mic-wrong-key",
-      "devEui": "69AE9F1F00060002",
+      "devEui": "69AE9F1F00060003",
       "activation": "OTAA",
       "appKey": "00112233445566778899AABBCCDDEEFF",
       "nwkKey": "00112233445566778899AABBCCDDEEFF",
@@ -32,7 +32,7 @@
         "enabled": true,
         "scenario": "mic-wrong-key",
         "trigger": "always",
-        "params": {"key":"FFEEDDCCBBAA99887766554433221100"}
+        "params": {"wrongKey":"FFEEDDCCBBAA99887766554433221100"}
       },
       "nodeState": { "uplinkIntervalMs": 8000, "dataRate": 3 }
     }

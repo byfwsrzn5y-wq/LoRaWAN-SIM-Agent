@@ -24,15 +24,15 @@
     },
     {
       "name": "fcnt-jump",
-      "devEui": "69AE9F1F00060002",
+      "devEui": "69AE9F1F00060004",
       "activation": "OTAA",
       "appKey": "00112233445566778899AABBCCDDEEFF",
       "nwkKey": "00112233445566778899AABBCCDDEEFF",
       "anomaly": {
         "enabled": true,
         "scenario": "fcnt-jump",
-        "trigger": "every-5th-uplink",
-        "params": {"jump":1000}
+        "trigger": "every-3rd-uplink",
+        "params": {"jumpSize": 5000}
       },
       "nodeState": { "uplinkIntervalMs": 8000, "dataRate": 3 }
     }

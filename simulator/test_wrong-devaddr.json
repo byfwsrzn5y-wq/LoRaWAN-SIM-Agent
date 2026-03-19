@@ -24,15 +24,15 @@
     },
     {
       "name": "wrong-devaddr",
-      "devEui": "69AE9F1F00060002",
+      "devEui": "69AE9F1F00060005",
       "activation": "OTAA",
       "appKey": "00112233445566778899AABBCCDDEEFF",
       "nwkKey": "00112233445566778899AABBCCDDEEFF",
       "anomaly": {
         "enabled": true,
         "scenario": "wrong-devaddr",
-        "trigger": "every-2nd-uplink",
-        "params": {"devaddr":"DEADBEEF"}
+        "trigger": "always",
+        "params": {"fakeDevAddr":"AA55AA55"}
       },
       "nodeState": { "uplinkIntervalMs": 8000, "dataRate": 3 }
     }

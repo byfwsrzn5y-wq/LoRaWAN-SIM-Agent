@@ -1,0 +1,17 @@
+{
+  "name": "lorawan-sim-discord-bot",
+  "version": "1.0.0",
+  "description": "Discord Bot for LoRaWAN World Simulator",
+  "main": "index.js",
+  "scripts": {
+    "start": "node -r dotenv/config index.js",
+    "dev": "node --watch -r dotenv/config index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.0",
+    "dotenv": "^16.6.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

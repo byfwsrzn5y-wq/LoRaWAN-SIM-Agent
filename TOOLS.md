@@ -73,6 +73,54 @@ curl -X POST http://10.5.40.109:8090/api/devices \
 
 ---
 
+## OpenClaw Discord Bot
+
+配置位于 `~/.openclaw/openclaw.json`。
+
+### 1. 获取 Guild ID
+
+Discord 设置 → 高级 → 开发者模式（开）→ 右键你的服务器 → 复制服务器 ID
+
+### 2. 写入配置
+
+编辑 `~/.openclaw/openclaw.json`，将 `channels.discord.guilds` 中的 `REPLACE_WITH_GUILD_ID` 替换为你的服务器 ID。
+
+### 3. Token
+
+```bash
+export DISCORD_BOT_TOKEN="你的Bot Token"
+```
+
+或写入 `~/.bash_profile` 后 `source ~/.bash_profile`。
+
+### 4. 前置（若未完成）
+
+1. [Discord Developer Portal](https://discord.com/developers/applications) 创建应用并添加 Bot
+2. 开启 **Server Members Intent** 和 **Message Content Intent**
+3. 邀请 Bot 到服务器（需消息权限）
+
+### 启动
+
+```bash
+openclaw gateway
+```
+
+### DM 配对（首次私聊需批准）
+
+```bash
+openclaw pairing list discord
+openclaw pairing approve discord <CODE>
+```
+
+### 配置说明
+
+| 选项 | 说明 |
+|------|------|
+| `requireMention: true` | 需 @ 提及 Bot 才回复 |
+| `requireMention: false` | 回复所有消息 |
+
+---
+
 ## 其他环境
 
 （可添加 Camera、TTS、Speaker 等）

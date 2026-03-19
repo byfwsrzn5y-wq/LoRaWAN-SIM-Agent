@@ -1,0 +1,17 @@
+{
+  "running": true,
+  "gateways": [
+    {
+      "eui": "0203040506070809",
+      "name": "default-gateway"
+    }
+  ],
+  "nodes": [],
+  "config": {},
+  "stats": {
+    "uplinks": 0,
+    "joins": 0,
+    "errors": 0
+  },
+  "lastUpdate": "2026-03-19T03:00:03.584Z"
+}
