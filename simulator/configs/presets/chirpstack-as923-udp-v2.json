@@ -1,0 +1,82 @@
+{
+  "version": "2.0",
+  "lorawan": {
+    "enabled": true,
+    "activation": "OTAA",
+    "region": "AS923",
+    "deviceCount": 5,
+    "appEuiStart": "0000000000000000",
+    "appKey": "00112233445566778899AABBCCDDEEFF",
+    "devEuiStart": "18d3bf0000000000"
+  },
+  "simulation": {
+    "duration": 120,
+    "autoStart": true,
+    "gateway": {
+      "gatewayEui": "19023c6b00000000",
+      "address": "localhost",
+      "port": 1702
+    },
+    "region": "AS923",
+    "logLevel": "info"
+  },
+  "signalModel": {
+    "enabled": true,
+    "nodePosition": { "x": 700, "y": 446, "z": 2 },
+    "gatewayPosition": { "x": 700, "y": 446, "z": 30 },
+    "environment": "urban",
+    "txPower": 16,
+    "txGain": 2.15,
+    "rxGain": 5,
+    "cableLoss": 0.5,
+    "noiseFloor": -120,
+    "shadowFadingStd": 8,
+    "fastFadingEnabled": true,
+    "timeVariation": true
+  },
+  "multiGateway": {
+    "enabled": true,
+    "mode": "overlapping",
+    "primaryGateway": "19023c6b00000000",
+    "gateways": [
+      {
+        "eui": "19023c6b00000000",
+        "name": "gw-apex-sw",
+        "position": { "x": 100, "y": 100, "z": 30 },
+        "rxGain": 5,
+        "rxSensitivity": -137,
+        "cableLoss": 0.5
+      },
+      {
+        "eui": "19023c6b00000001",
+        "name": "gw-apex-se",
+        "position": { "x": 1300, "y": 100, "z": 30 },
+        "rxGain": 5,
+        "rxSensitivity": -137,
+        "cableLoss": 0.5
+      },
+      {
+        "eui": "19023c6b00000002",
+        "name": "gw-apex-north",
+        "position": { "x": 700, "y": 1139.23, "z": 30 },
+        "rxGain": 5,
+        "rxSensitivity": -137,
+        "cableLoss": 0.5
+      }
+    ]
+  },
+  "controlServer": {
+    "enabled": true,
+    "port": 9999,
+    "host": "127.0.0.1"
+  },
+  "uplink": {
+    "enabled": true,
+    "codec": "simple",
+    "payloadLength": 5,
+    "interval": 10000,
+    "intervalMs": 10000,
+    "lorawan": { "fPort": 2 }
+  },
+  "devices": []
+}

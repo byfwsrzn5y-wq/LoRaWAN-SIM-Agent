@@ -1,0 +1,257 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "lorawan-sim:lorasim-config",
+  "title": "LoRaWAN-SIM simulator config (index.js)",
+  "description": "Configuration JSON for node index.js -c. Use profile-based validation (lorasim-config-validate) for conditional required fields. v2.0 uses simulation.gateway; flat legacy may use gatewayEui, lnsHost, lnsPort at root.",
+  "x-lorasim-peer-ns": "Peer network server (e.g. ChirpStack) is a separate deployment—self-hosted, vendor, or third-party. Align gateway EUI, Bridge UDP/MQTT, keys, and region with that environment; this schema does not pin a vendor.",
+  "x-lorasim-official-entry": "cd simulator && node index.js -c <file>",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "preset": {
+      "type": "string",
+      "description": "Shorthand: load configs/presets/<name>.json first (before extends). Example: chirpstack-as923-udp-v2. Resolved at runtime by simulator/src/config/v20-normalize.js."
+    },
+    "extends": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "array", "items": { "type": "string" } }
+      ],
+      "description": "Merge one or more JSON configs before this file. Paths: relative to this file’s directory, else configs/presets/<basename>, else simulator/configs/<path>. Later entries override earlier; this file’s keys win last. See docs/CONFIG_MAP.md."
+    },
+    "version": {
+      "type": ["string", "number"],
+      "description": "Use \"2.0\" for ChirpStack-style configs: simulation.gateway is copied to gatewayEui, lnsHost, lnsPort by normalizeV20ConfigForLegacyIndex (simulator/src/config/v20-normalize.js)."
+    },
+    "gatewayEui": {
+      "type": "string",
+      "description": "Gateway ID (16 hex chars). v2.0 may use simulation.gateway.gatewayEui instead.",
+      "x-lorasim-tier": "required-v20-udp",
+      "x-lorasim-scenarios": ["v20-udp", "mqtt", "multigw", "openclaw"]
+    },
+    "lnsHost": {
+      "type": "string",
+      "description": "UDP target host. Merged from simulation.gateway.address in v2.0.",
+      "x-lorasim-tier": "required-v20-udp"
+    },
+    "lnsPort": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535,
+      "description": "UDP target port (e.g. ChirpStack Gateway Bridge 1700/1702).",
+      "x-lorasim-tier": "required-v20-udp"
+    },
+    "udpBindPort": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535,
+      "description": "Local UDP bind; 0 = ephemeral.",
+      "x-lorasim-tier": "optional"
+    },
+    "simulation": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "v2.0 block: gateway, region, autoStart, duration, logLevel.",
+      "properties": {
+        "gateway": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "gatewayEui": { "type": "string" },
+            "address": { "type": "string" },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+          }
+        },
+        "region": { "type": "string" },
+        "autoStart": { "type": "boolean" },
+        "duration": { "type": "number" },
+        "logLevel": { "type": "string" }
+      }
+    },
+    "lorawan": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "LoRaWAN device generation: OTAA/ABP, deviceCount, devEuiStart/appKey, csvImportPath, randomBehaviors, etc. Per-device list lives in devices[]. See docs/CONFIG_MAP.md.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "activation": { "type": "string" },
+        "deviceCount": { "type": "integer", "minimum": 0 },
+        "region": { "type": "string" },
+        "macVersion": { "type": "string" },
+        "joinEnabled": { "type": "boolean" },
+        "class": { "type": "string" },
+        "adr": { "type": "boolean" },
+        "appKey": { "type": "string" },
+        "appEui": { "type": "string" },
+        "devEui": { "type": "string" },
+        "appEuiStart": { "type": "string" },
+        "devEuiStart": { "type": "string" },
+        "devAddrStart": { "type": "string" },
+        "nwkSKey": { "type": "string" },
+        "appSKey": { "type": "string" },
+        "otaaName": { "type": "string" },
+        "csvImportPath": { "type": "string" },
+        "csvPath": { "type": "string" },
+        "csvGroup": { "type": "string" },
+        "csvProfile": { "type": "string" },
+        "randomBehaviors": { "type": "boolean" },
+        "behaviorTemplatesFile": { "type": "string" },
+        "behaviorTemplatesPath": { "type": "string" },
+        "behaviorTemplateList": {
+          "oneOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "string" }]
+        },
+        "behaviorTemplates": { "type": "object" }
+      }
+    },
+    "uplink": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "interval 与 intervalMs 均可能被识别为毫秒（见 startUplinkScheduler）；推荐统一使用 intervalMs 避免歧义。",
+      "x-lorasim-doc-zh": "上行周期：index.js 中 interval/intervalMs 均传入 Number() 作为毫秒调度。",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "interval": { "type": "number" },
+        "intervalMs": { "type": "number" },
+        "scatterMode": { "type": "string" },
+        "codec": { "type": "string" },
+        "payloadFormat": { "type": "string" },
+        "payload": { "type": "string" },
+        "payloadLength": { "type": "number" },
+        "jitterRatio": { "type": "number" },
+        "burstCount": { "type": "integer" },
+        "burstIntervalMs": { "type": "number" },
+        "silenceAfterBurstMs": { "type": "number" },
+        "intervalAfterFirstDataMs": { "type": "number" },
+        "joinRetryIntervalMs": { "type": "number" },
+        "joinRetryMaxAttempts": { "type": "integer" },
+        "rejoinIntervalMs": { "type": "number" },
+        "count": { "type": "integer" },
+        "duplicateFirstData": { "type": "boolean" },
+        "rf": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "frequency": { "type": "number" },
+            "spreadingFactor": { "type": "number" },
+            "bandwidth": { "type": "number" },
+            "codeRate": { "type": "string" }
+          }
+        },
+        "lorawan": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "fPort": { "type": "integer", "minimum": 0, "maximum": 255 },
+            "confirmed": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "devices": {
+      "type": "array",
+      "description": "Per-device OTAA/ABP overrides; see index.js device loader.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "name": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "activation": { "type": "string" },
+          "lorawan": { "type": "object", "additionalProperties": true },
+          "uplink": { "type": "object", "additionalProperties": true },
+          "nodeState": { "type": "object", "additionalProperties": true },
+          "anomaly": { "type": "object", "additionalProperties": true },
+          "position": { "type": "object", "additionalProperties": true },
+          "location": { "type": "object", "additionalProperties": true }
+        }
+      }
+    },
+    "mqtt": {
+      "type": "object",
+      "additionalProperties": true,
+      "x-lorasim-tier": "optional",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "host": { "type": "string" },
+        "port": { "type": "integer" },
+        "marshaler": { "type": "string" },
+        "mqttTopicPrefix": { "type": "string" },
+        "topicPrefix": { "type": "string" },
+        "qos": { "type": "integer" }
+      }
+    },
+    "multiGateway": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "When enabled, RSSI/distance use gateways[].position vs each node; UDP/MQTT uplinks may replicate per receiving gateway. Primary EUI should match simulation.gateway.gatewayEui for single-bridge ChirpStack setups.",
+      "x-lorasim-tier": "advanced",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "mode": { "type": "string", "enum": ["overlapping", "handover", "failover"] },
+        "primaryGateway": { "type": "string" },
+        "hysteresisMargin": { "type": "number" },
+        "handoverThreshold": { "type": "number" },
+        "minHandoverInterval": { "type": "number" },
+        "gateways": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "eui": { "type": "string" },
+              "name": { "type": "string" },
+              "position": { "type": "object" },
+              "rxGain": { "type": "number" },
+              "rxSensitivity": { "type": "number" },
+              "cableLoss": { "type": "number" }
+            }
+          }
+        }
+      }
+    },
+    "signalModel": {
+      "type": "object",
+      "additionalProperties": true,
+      "x-lorasim-tier": "advanced",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "nodePosition": { "type": "object" },
+        "gatewayPosition": { "type": "object" },
+        "environment": { "type": "string" },
+        "txPower": { "type": "number" },
+        "txGain": { "type": "number" },
+        "rxGain": { "type": "number" },
+        "cableLoss": { "type": "number" },
+        "noiseFloor": { "type": "number" },
+        "shadowFadingStd": { "type": "number" },
+        "fastFadingEnabled": { "type": "boolean" },
+        "timeVariation": { "type": "boolean" }
+      }
+    },
+    "controlServer": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "HTTP API for start/stop/reset; used by OpenClaw lorawan_sim_reset_device.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "host": { "type": "string" },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+      }
+    },
+    "visualizer": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "stateIntervalMs": { "type": "number" }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "pullKeepaliveMs": {
+      "type": "number",
+      "description": "Gateway bridge PULL_DATA keepalive interval."
+    }
+  }
+}

@@ -13,6 +13,19 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const http = require('http');
+const { injectAnomaly } = require('./anomaly_module');
+const {
+  PATH_LOSS_EXPONENT,
+  calculateDistance,
+  calculateFSPL,
+  gaussianRandom,
+  rayleighFading,
+  generateDevicePosition,
+  calculateRealisticSignal
+} = require('./signal_model');
+const { resolveLorawanAdrEnabled, linkAdrChannelMaskAck, linkAdrAppliedChannelMask } = require('./src/utils');
+const { readConfig } = require('./src/config/v20-normalize');
+const { parseCliConfigArgs, applyCliConfigOverrides, HELP_CONFIG_TEXT } = require('./src/config/cli-overrides');
 let mqttLib = null;
 let mqttClient = null;
 let protobuf = null;
@@ -47,8 +60,15 @@ let simState = {
   nodes: [],
   config: {},
   stats: { uplinks: 0, joins: 0, errors: 0 },
-  lastUpdate: null
+  lastUpdate: null,
+  packetLog: []
 };
+
+function pushSimPacketLog(entry) {
+  if (!simState.packetLog) simState.packetLog = [];
+  simState.packetLog.push(entry);
+  if (simState.packetLog.length > 50) simState.packetLog.shift();
+}
 
 function updateSimState(updates) {
   Object.assign(simState, updates);
@@ -144,7 +164,9 @@ function mapCodeRateStringToEnum(crStr) {
 
 // Simple codec: [counterHigh, counterLow, ...random bytes], max 20 bytes total
 function generateSimplePayload(devEui, payloadLength) {
-  const len = Math.min(Math.max(payloadLength || 4, 2), 20);
+  const rawLen = Number(payloadLength);
+  const normalizedLen = Number.isFinite(rawLen) ? Math.floor(rawLen) : 4;
+  const len = Math.min(Math.max(normalizedLen || 4, 2), 20);
   if (!(devEui in simpleDeviceCounters)) {
     simpleDeviceCounters[devEui] = 0;
   }
@@ -356,7 +378,18 @@ function lorawanDecrypt(keyBuf, devAddrBufLE, fCnt, direction, encryptedPayload)
   return lorawanEncrypt(keyBuf, devAddrBufLE, fCnt, direction, encryptedPayload);
 }
 
-function buildLorawanUplinkAbp({ nwkSKey, appSKey, devAddr, fCntUp, fPort, confirmed, payload, macCommands, ackDownlink }) {
+function buildLorawanUplinkAbp({
+  nwkSKey,
+  appSKey,
+  devAddr,
+  fCntUp,
+  fPort,
+  confirmed,
+  payload,
+  macCommands,
+  ackDownlink,
+  adr = true,
+}) {
   const MHDR = Buffer.from([confirmed ? 0x80 : 0x40]);
 
   let FOpts = Buffer.alloc(0);
@@ -366,9 +399,20 @@ function buildLorawanUplinkAbp({ nwkSKey, appSKey, devAddr, fCntUp, fPort, confi
     if (FOpts.length > 15) FOpts = FOpts.slice(0, 15);
   }
 
+  if (process.env.LORASIM_DEBUG_MAC_FOPTS === '1') {
+    const macSummary = (macCommands || []).map(cmd => {
+      const payloadHex = Buffer.isBuffer(cmd.payload) ? cmd.payload.toString('hex') : '';
+      return `cid=0x${cmd.cid.toString(16)} payload=${payloadHex}`;
+    }).join(' | ');
+    console.log(
+      `[LORASIM_DEBUG_MAC_FOPTS] building uplink: FOptsLen=${FOpts.length} FOpts=0x${FOpts.toString('hex')} ` +
+      `macCommands=${macSummary}`
+    );
+  }
+
   let fctrlByte = FOpts.length & 0x0f;
   if (ackDownlink) fctrlByte |= 0x20;
-  fctrlByte |= 0x80;
+  if (adr) fctrlByte |= 0x80;
   const FCtrl = Buffer.from([fctrlByte]);
   const fCnt16 = fCntUp & 0xffff;
   const FCnt = Buffer.from([fCnt16 & 0xff, (fCnt16 >> 8) & 0xff]);
@@ -508,7 +552,22 @@ function randToken() {
 }
 
 function nowIso() {
+  // rxpk (uplink) expects ISO 8601 format: "2026-03-23T13:18:46Z"
   return new Date().toISOString();
+}
+
+function nowGoTime() {
+  // stat (gateway stats) expects Go format: "2006-01-02 15:04:05 MST"
+  const d = new Date();
+  const pad = (n) => n.toString().padStart(2, '0');
+  const year = d.getFullYear();
+  const month = pad(d.getMonth() + 1);
+  const day = pad(d.getDate());
+  const hour = pad(d.getHours());
+  const minute = pad(d.getMinutes());
+  const second = pad(d.getSeconds());
+  // Use UTC timezone abbreviation
+  return `${year}-${month}-${day} ${hour}:${minute}:${second} UTC`;
 }
 
 function sfBwString(sf, bw) {
@@ -519,9 +578,17 @@ function clamp(val, min, max) {
   return Math.max(min, Math.min(max, val));
 }
 
-function readConfig(configPath) {
-  const absolute = path.isAbsolute(configPath) ? configPath : path.join(process.cwd(), configPath);
-  return JSON.parse(fs.readFileSync(absolute, 'utf8'));
+function isLoopbackHost(host) {
+  const h = String(host || '').trim().toLowerCase();
+  return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '::ffff:127.0.0.1';
+}
+
+function sameUdpPeerAddress(expectedHost, actualAddress) {
+  const e = String(expectedHost || '').trim().toLowerCase();
+  const a = String(actualAddress || '').trim().toLowerCase();
+  if (e === a) return true;
+  if (isLoopbackHost(e) && isLoopbackHost(a)) return true;
+  return false;
 }
 
 /**
@@ -562,6 +629,8 @@ function applyBehaviorTemplate(template, baseline) {
     out.lorawan = mergeOne(baseline.lorawan, template.lorawan);
     out.devStatus = template.devStatus ? { ...template.devStatus } : (baseline.devStatus ? { ...baseline.devStatus } : undefined);
     if (template.adrReject !== undefined) out.adrReject = template.adrReject; else if (baseline.adrReject !== undefined) out.adrReject = baseline.adrReject;
+    if (template.adr !== undefined) out.adr = template.adr;
+    else if (baseline.adr !== undefined) out.adr = baseline.adr;
     if (template.duplicateFirstData !== undefined) out.duplicateFirstData = template.duplicateFirstData; else if (baseline.duplicateFirstData !== undefined) out.duplicateFirstData = baseline.duplicateFirstData;
   } else {
     if (template.nodeState) out.nodeState = { ...template.nodeState };
@@ -569,6 +638,7 @@ function applyBehaviorTemplate(template, baseline) {
     if (template.lorawan) out.lorawan = { ...template.lorawan };
     if (template.devStatus) out.devStatus = { ...template.devStatus };
     if (template.adrReject !== undefined) out.adrReject = template.adrReject;
+    if (template.adr !== undefined) out.adr = template.adr;
     if (template.duplicateFirstData !== undefined) out.duplicateFirstData = template.duplicateFirstData;
   }
   return out;
@@ -581,6 +651,33 @@ function shuffleArray(arr) {
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
   return arr;
+}
+
+/**
+ * 多网关：在 canReceive 集合上按 mode 选择本次上行发往哪些网关。
+ * random_subset：每次随机选 1..N 个（均匀随机个数，再随机挑网关），用于模拟分集/偶发多路接收。
+ */
+function pickMultiGwReceivers(receptions, multiGwConfig) {
+  if (!receptions || receptions.length === 0) return [];
+  const mode = String((multiGwConfig && multiGwConfig.mode) || 'overlapping').toLowerCase();
+  switch (mode) {
+    case 'overlapping':
+      return receptions;
+    case 'handover':
+      return receptions.length ? [receptions.reduce((a, b) => (a.rssi > b.rssi ? a : b))] : [];
+    case 'failover': {
+      const primary = receptions.find((r) => r.eui === multiGwConfig.primaryGateway);
+      return primary ? [primary] : [receptions[0]];
+    }
+    case 'random_subset': {
+      const copy = [...receptions];
+      shuffleArray(copy);
+      const k = 1 + Math.floor(Math.random() * copy.length);
+      return copy.slice(0, k);
+    }
+    default:
+      return receptions;
+  }
 }
 
 /** 按权重对象 { id: weight } 随机返回一个 id，weight 会按总和归一化 */
@@ -701,18 +798,6 @@ function buildRxpk({ freq, sf, bw, codr, rssi, lsnr, base64Payload, chan }) {
   };
 }
 
-function parseCliArgs() {
-  const args = process.argv.slice(2);
-  const result = { config: 'config.json', deviceCount: null, frequency: null };
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if ((a === '-c' || a === '--config') && args[i + 1]) result.config = args[++i];
-    else if (a === '--device-count' && args[i + 1]) result.deviceCount = parseInt(args[++i]);
-    else if (a === '--frequency' && args[i + 1]) result.frequency = parseInt(args[++i]);
-  }
-  return result;
-}
-
 // -----------------------------
 // MAC Command Parser and Handler
 // -----------------------------
@@ -758,13 +843,16 @@ function parseMacCommands(payload) {
   return commands;
 }
 
-// -----------------------------
-// MQTT Downlink Handler Factory
-// -----------------------------
-function createMqttHandlers(mqttMarshaler, mqttTopicPrefix, gatewayEuiBuf, gwProto, mqttClient, mqttCfg) {
-  const mqttOpts = mqttCfg || {};
-  let downlinkCount = 0;
+/**
+ * MQTT 与 UDP（PULL_RESP）共用的下行 MAC 队列与 LinkADRReq 等处理。
+ */
+function createMacDownlinkHandlers() {
   const macResponseQueues = {};
+
+  function markNeedsAck(devAddr) {
+    if (!macResponseQueues[devAddr]) macResponseQueues[devAddr] = [];
+    macResponseQueues[devAddr].needsAck = true;
+  }
 
   function handleMacCommands(devAddr, macCommands) {
     if (!macResponseQueues[devAddr]) macResponseQueues[devAddr] = [];
@@ -786,11 +874,26 @@ function createMqttHandlers(mqttMarshaler, mqttTopicPrefix, gatewayEuiBuf, gwPro
             let statusByte = 0x00;
             if (dataRate >= 0 && dataRate <= 5) statusByte |= 0x02;
             if (txPower >= 0 && txPower <= 7) statusByte |= 0x04;
-            if (chMaskCntl === 0 && (chMask & 0xFF00) === 0 && chMask !== 0) statusByte |= 0x01;
+            if (linkAdrChannelMaskAck(chMask, chMaskCntl)) statusByte |= 0x01;
+
+            // Debug aid: without raw hex from NS logs, we still need to verify
+            // the parsed chMask/redundancy that drive channel_ack (bit0).
+            if (process.env.LORASIM_DEBUG_MAC === '1') {
+              const channelAck = (statusByte & 0x01) !== 0;
+              const drAck = (statusByte & 0x02) !== 0;
+              const txPowerAck = (statusByte & 0x04) !== 0;
+              console.log(
+                `[LORASIM_DEBUG_MAC] LinkADRReq->LinkADRAns DR=${dataRate} TxPower=${txPower} ` +
+                `chMask=0x${chMask.toString(16).padStart(4, '0')} chMaskCntl=${chMaskCntl} ` +
+                `redundancy=0x${redundancy.toString(16).padStart(2, '0')} nbTrans=${nbTrans} ` +
+                `statusByte=0x${statusByte.toString(16).padStart(2, '0')} ` +
+                `channel_ack=${channelAck} dr_offset_ack=${drAck} tx_power_ack=${txPowerAck}`
+              );
+            }
             if (statusByte === 0x07) {
               device.macParams.dataRate = dataRate;
               device.macParams.txPower = txPower;
-              device.macParams.channelMask = chMask;
+              device.macParams.channelMask = linkAdrAppliedChannelMask(chMask, chMaskCntl);
               device.macParams.nbTrans = nbTrans;
             }
             response = { cid: 0x03, name: 'LinkADRAns', payload: Buffer.from([statusByte]) };
@@ -802,15 +905,28 @@ function createMqttHandlers(mqttMarshaler, mqttTopicPrefix, gatewayEuiBuf, gwPro
           if (device && device.macParams && cmd.payload && cmd.payload.length >= 4) {
             const rx1DROffset = (cmd.payload[0] >> 4) & 0x07;
             const rx2DataRate = cmd.payload[0] & 0x0F;
-            const rx2Frequency = (cmd.payload[1] | (cmd.payload[2] << 8) | (cmd.payload[3] << 16)) * 100;
+            const rx2FrequencyRaw = (cmd.payload[1] | (cmd.payload[2] << 8) | (cmd.payload[3] << 16));
+            const rx2Frequency = rx2FrequencyRaw * 100;
+            const rx2FrequencyIsDefault = rx2FrequencyRaw === 0;
             let statusByte = 0x00;
             if (rx1DROffset >= 0 && rx1DROffset <= 7) statusByte |= 0x04;
             if (rx2DataRate >= 0 && rx2DataRate <= 7) statusByte |= 0x02;
-            if (rx2Frequency >= 915000000 && rx2Frequency <= 928000000) statusByte |= 0x01;
+            if (rx2FrequencyIsDefault || (rx2Frequency >= 915000000 && rx2Frequency <= 928000000)) statusByte |= 0x01;
+
+            if (process.env.LORASIM_DEBUG_MAC === '1') {
+              const rx2FreqAck = (statusByte & 0x01) !== 0;
+              console.log(
+                `[LORASIM_DEBUG_MAC] RXParamSetupReq->RXParamSetupAns rx1DROffset=${rx1DROffset} rx2DataRate=${rx2DataRate} ` +
+                `rx2FrequencyRaw=0x${rx2FrequencyRaw.toString(16)} rx2Frequency=${rx2Frequency} statusByte=0x${statusByte.toString(16).padStart(2, '0')} ` +
+                `rx2_freq_ack=${rx2FreqAck}`
+              );
+            }
             if (statusByte === 0x07) {
               device.macParams.rx1DROffset = rx1DROffset;
               device.macParams.rx2DataRate = rx2DataRate;
-              device.macParams.rx2Frequency = rx2Frequency;
+              // rx2FrequencyRaw==0 means "use default" for ChirpStack tooling;
+              // do not overwrite with 0.
+              if (!rx2FrequencyIsDefault) device.macParams.rx2Frequency = rx2Frequency;
             }
             response = { cid: 0x05, name: 'RXParamSetupAns', payload: Buffer.from([statusByte]) };
           } else {
@@ -879,6 +995,59 @@ function createMqttHandlers(mqttMarshaler, mqttTopicPrefix, gatewayEuiBuf, gwPro
     return responses;
   }
 
+  return { handleMacCommands, getMacResponses, markNeedsAck };
+}
+
+/** 解析 Unconfirmed/Confirmed Downlink Data，解密 FPort0 MAC，入队 Ans（MQTT 与 UDP PULL_RESP 共用） */
+function applyDataDownlinkMacAndQueue(phyPayload, macDl) {
+  if (!phyPayload || phyPayload.length < 12) return null;
+  const mhdr = phyPayload[0];
+  const mType = (mhdr >> 5) & 0x07;
+  if (mType !== 0x03 && mType !== 0x05) return null;
+  const isConfirmed = mType === 0x05;
+  const devAddr = phyPayload.slice(1, 5).reverse().toString('hex');
+  const fctrl = phyPayload[5];
+  const foptsLen = fctrl & 0x0f;
+  const ackBit = (fctrl >> 5) & 0x01;
+  const fcnt = phyPayload.readUInt16LE(6);
+  let macCommands = [];
+  if (foptsLen > 0) {
+    macCommands = parseMacCommands(phyPayload.slice(8, 8 + foptsLen));
+  }
+  const payloadStart = 8 + foptsLen;
+  let fPort = null;
+  if (phyPayload.length > payloadStart + 4) {
+    fPort = phyPayload[payloadStart];
+    const frmPayload = phyPayload.slice(payloadStart + 1, phyPayload.length - 4);
+    if (fPort === 0 && frmPayload && frmPayload.length > 0) {
+      try {
+        const device = globalDeviceMap[devAddr];
+        if (device && device.nwkSKey) {
+          const nwkSKeyBuf = Buffer.isBuffer(device.nwkSKey) ? device.nwkSKey : Buffer.from(device.nwkSKey, 'hex');
+          const devAddrBufLE = Buffer.from(devAddr, 'hex').reverse();
+          const actualPayload = lorawanDecrypt(nwkSKeyBuf, devAddrBufLE, fcnt, 1, frmPayload);
+          macCommands = parseMacCommands(actualPayload);
+        } else {
+          macCommands = parseMacCommands(frmPayload);
+        }
+      } catch (e) {
+        macCommands = [];
+      }
+    }
+  }
+  if (isConfirmed) {
+    macDl.markNeedsAck(devAddr);
+  }
+  if (macCommands.length > 0) {
+    macDl.handleMacCommands(devAddr, macCommands);
+  }
+  return { devAddr, macCommands, isConfirmed, fPort, ackBit };
+}
+
+function createMqttHandlers(mqttMarshaler, mqttTopicPrefix, gatewayEuiBuf, gwProto, mqttClient, mqttCfg, macDl, vizHooks) {
+  const mqttOpts = mqttCfg || {};
+  let downlinkCount = 0;
+
   function handleMqttDownlink(topic, payload) {
     downlinkCount++;
     const timestamp = new Date().toLocaleTimeString('zh-CN', { hour12: false });
@@ -900,7 +1069,7 @@ function createMqttHandlers(mqttMarshaler, mqttTopicPrefix, gatewayEuiBuf, gwPro
         }
       }
 
-      let devAddr = 'unknown', fPort = null, frmPayload = null, fOpts = null, macCommands = [];
+      let devAddr = 'unknown';
 
       if (phyPayload && phyPayload.length >= 4) {
         const mhdr = phyPayload[0];
@@ -959,6 +1128,13 @@ function createMqttHandlers(mqttMarshaler, mqttTopicPrefix, gatewayEuiBuf, gwPro
               // Remove the matched device from pending queue
               pendingOtaaDevices.splice(matchedIndex, 1);
               console.log(`[OTAA] Join Accept OK | DevAddr: ${devAddrHex} | DevEUI: ${o.devEui.toString('hex')} `);
+              if (vizHooks && typeof vizHooks.onOtaaJoinOk === 'function') {
+                try {
+                  vizHooks.onOtaaJoinOk(o, devAddrHex);
+                } catch (e) {
+                  console.error('[Visualizer] onOtaaJoinOk:', e.message);
+                }
+              }
             } else {
               console.warn(`[OTAA] Join Accept received but no matching device found in pending queue (${pendingOtaaDevices.length} pending)`);
             }
@@ -970,53 +1146,20 @@ function createMqttHandlers(mqttMarshaler, mqttTopicPrefix, gatewayEuiBuf, gwPro
         }
 
         if (phyPayload.length >= 12 && (mType === 0x03 || mType === 0x05)) {
-          const isConfirmed = (mType === 0x05);
-          devAddr = phyPayload.slice(1, 5).reverse().toString('hex');
-          const fctrl = phyPayload[5];
-          const foptsLen = fctrl & 0x0F;
-          const ackBit = (fctrl >> 5) & 0x01;
-          const fcnt = phyPayload.readUInt16LE(6);
-          if (foptsLen > 0) {
-            fOpts = phyPayload.slice(8, 8 + foptsLen);
-            macCommands = parseMacCommands(fOpts);
-          }
-          const payloadStart = 8 + foptsLen;
-          if (phyPayload.length > payloadStart + 4) {
-            fPort = phyPayload[payloadStart];
-            frmPayload = phyPayload.slice(payloadStart + 1, phyPayload.length - 4);
-            if (fPort === 0 && frmPayload && frmPayload.length > 0) {
-              try {
-                const device = globalDeviceMap[devAddr];
-                if (device && device.nwkSKey) {
-                  const nwkSKeyBuf = Buffer.isBuffer(device.nwkSKey) ? device.nwkSKey : Buffer.from(device.nwkSKey, 'hex');
-                  const devAddrBufLE = Buffer.from(devAddr, 'hex').reverse();
-                  const actualPayload = lorawanDecrypt(nwkSKeyBuf, devAddrBufLE, fcnt, 1, frmPayload);
-                  macCommands = parseMacCommands(actualPayload);
-                } else {
-                  macCommands = parseMacCommands(frmPayload);
-                }
-              } catch (e) {
-                macCommands = [];
-              }
+          const dlResult = applyDataDownlinkMacAndQueue(phyPayload, macDl);
+          if (dlResult) {
+            devAddr = dlResult.devAddr;
+            const mTypeName = dlResult.isConfirmed ? 'Confirmed' : 'Unconfirmed';
+            const ackInfo = dlResult.ackBit ? ' | LNS-ACK:✓' : '';
+            if (dlResult.macCommands.length > 0) {
+              const cmdNames = dlResult.macCommands.map((cmd) => cmd.name).join(', ');
+              console.log(`[⬇ ${timestamp}] Downlink #${downlinkCount} | ${mTypeName} | ID: ${downlinkId} | DevAddr: ${devAddr} | MAC: [${cmdNames}]${ackInfo}`);
+            } else if (dlResult.fPort !== null) {
+              console.log(`[⬇ ${timestamp}] Downlink #${downlinkCount} | ${mTypeName} | ID: ${downlinkId} | DevAddr: ${devAddr} | FPort: ${dlResult.fPort}${ackInfo}`);
+            } else {
+              console.log(`[⬇ ${timestamp}] Downlink #${downlinkCount} | ${mTypeName} | ID: ${downlinkId} | DevAddr: ${devAddr}${ackInfo}`);
             }
           }
-
-          const mTypeName = isConfirmed ? 'Confirmed' : 'Unconfirmed';
-          const ackInfo = ackBit ? ' | LNS-ACK:✓' : '';
-          if (macCommands.length > 0) {
-            const cmdNames = macCommands.map(cmd => cmd.name).join(', ');
-            console.log(`[⬇ ${timestamp}] Downlink #${downlinkCount} | ${mTypeName} | ID: ${downlinkId} | DevAddr: ${devAddr} | MAC: [${cmdNames}]${ackInfo}`);
-          } else if (fPort !== null) {
-            console.log(`[⬇ ${timestamp}] Downlink #${downlinkCount} | ${mTypeName} | ID: ${downlinkId} | DevAddr: ${devAddr} | FPort: ${fPort}${ackInfo}`);
-          } else {
-            console.log(`[⬇ ${timestamp}] Downlink #${downlinkCount} | ${mTypeName} | ID: ${downlinkId} | DevAddr: ${devAddr}${ackInfo}`);
-          }
-
-          if (isConfirmed) {
-            if (!macResponseQueues[devAddr]) macResponseQueues[devAddr] = [];
-            macResponseQueues[devAddr].needsAck = true;
-          }
-          if (macCommands.length > 0) handleMacCommands(devAddr, macCommands);
         } else {
           console.log(`[⬇ ${timestamp}] Downlink #${downlinkCount} | ID: ${downlinkId} | MType: 0x${mType.toString(16)}`);
         }
@@ -1060,21 +1203,24 @@ function createMqttHandlers(mqttMarshaler, mqttTopicPrefix, gatewayEuiBuf, gwPro
     }
   }
 
-  return { handleMqttDownlink, getMacResponses, downlinkCount: () => downlinkCount };
+  return { handleMqttDownlink, getMacResponses: macDl.getMacResponses, downlinkCount: () => downlinkCount };
 }
 
 async function main() {
-  const cliArgs = parseCliArgs();
-  const config = readConfig(cliArgs.config);
+  let cliArgs;
+  try {
+    cliArgs = parseCliConfigArgs(process.argv);
+  } catch (e) {
+    console.error('[config]', e.message || e);
+    process.exit(1);
+  }
+  if (cliArgs.helpConfig) {
+    console.log(HELP_CONFIG_TEXT);
+    process.exit(0);
+  }
 
-  if (cliArgs.deviceCount !== null) {
-    if (!config.lorawan) config.lorawan = {};
-    config.lorawan.deviceCount = cliArgs.deviceCount;
-  }
-  if (cliArgs.frequency !== null) {
-    if (!config.uplink) config.uplink = {};
-    config.uplink.interval = cliArgs.frequency * 1000;
-  }
+  let config = readConfig(cliArgs.config);
+  config = applyCliConfigOverrides(config, cliArgs.entries);
 
   const gatewayEuiBuf = euiStringToBuffer(config.gatewayEui || '0102030405060708');
   const lnsHost = config.lnsHost || '127.0.0.1';
@@ -1106,6 +1252,78 @@ async function main() {
     },
     activeDevices: new Set()
   };
+
+  /**
+   * Merge node into sim-state for visualizer (HTTP / sim-state.json).
+   * @param {object} options
+   * @param {boolean} [options.countTx=true] If false (e.g. OTAA Join Request), refresh node on map without incrementing global uplink stats.
+   */
+  function recordVisualizerAfterUplink(lorawanDevice, label, rssi, snr, options = {}) {
+    if (!lorawanDevice || !lorawanDevice.devEui) return;
+    const countTx = options.countTx !== false;
+    const devEuiUp = lorawanDevice.devEui.toString('hex').toUpperCase();
+    const displayName = label || lorawanDevice._vizLabel || devEuiUp.slice(-4);
+    const devAddr = lorawanDevice.devAddr ? lorawanDevice.devAddr.toString('hex').toUpperCase() : 'N/A';
+    const existingNode = simState.nodes.find(n => n.eui === devEuiUp);
+    const nowIso = new Date().toISOString();
+    const payloadPreview = typeof options.payloadPreview === 'string' ? options.payloadPreview : '';
+    if (countTx) {
+      uplinkCount++;
+      lorawanDevice._vizUplinkCount = (lorawanDevice._vizUplinkCount || 0) + 1;
+      const fCntLog = Math.max(0, (lorawanDevice.fCntUp || 0) - 1);
+      const timestamp = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+      console.log(`[⬆ ${timestamp}] Uplink #${uplinkCount} | ${displayName} | DevAddr:${devAddr} FCnt:${fCntLog}`);
+      simState.stats.uplinks = uplinkCount;
+    }
+    const fCntDisplay = lorawanDevice.joined ? Math.max(0, (lorawanDevice.fCntUp || 0) - 1) : 0;
+    const rssiVal = rssi !== undefined && rssi !== null ? Number(rssi) : (lorawanDevice.nodeState?.rssi ?? existingNode?.rssi ?? -80);
+    const snrVal = snr !== undefined && snr !== null ? Number(snr) : (lorawanDevice.nodeState?.snr ?? existingNode?.snr ?? 5);
+    const uplinksDisplay = countTx
+      ? (lorawanDevice._vizUplinkCount || 0)
+      : (existingNode && existingNode.uplinks !== undefined ? existingNode.uplinks : (lorawanDevice._vizUplinkCount || 0));
+    const newNode = {
+      eui: devEuiUp,
+      name: displayName,
+      devAddr,
+      fCnt: fCntDisplay,
+      joined: lorawanDevice.joined,
+      rssi: rssiVal,
+      snr: snrVal,
+      uplinks: uplinksDisplay,
+      position: lorawanDevice.position,
+      anomaly: lorawanDevice.anomaly,
+      lastSeen: nowIso,
+      lastPayload: payloadPreview || existingNode?.lastPayload
+    };
+    const idx = simState.nodes.findIndex(n => n.eui === devEuiUp);
+    if (idx >= 0) simState.nodes[idx] = newNode;
+    else simState.nodes.push(newNode);
+    if (payloadPreview) {
+      pushSimPacketLog({
+        nodeId: devEuiUp,
+        time: nowIso,
+        type: countTx ? 'data' : 'join',
+        rssi: rssiVal,
+        snr: snrVal,
+        payload: payloadPreview,
+        status: 'ok'
+      });
+    }
+    if (lorawanDevice.nodeState) {
+      if (rssiVal !== undefined && rssiVal !== null) {
+        lorawanDevice.nodeState.rssi = rssiVal;
+        lorawanDevice.nodeState.lastRssi = rssiVal;
+      }
+      if (snrVal !== undefined && snrVal !== null) {
+        lorawanDevice.nodeState.snr = snrVal;
+      }
+    }
+    if (options.vizJoinOk) {
+      simState.stats.joins = (simState.stats.joins || 0) + 1;
+    }
+    simState.lastUpdate = nowIso;
+    writeSimState();
+  }
 
   function trackUplinkSent(uplinkMsg, devAddr, devEui, fCnt, confirmed, fPort) {
     const uniqueId = `${devEui}_${fCnt}`;
@@ -1230,6 +1448,7 @@ async function main() {
 
   let socket = null;
   let mqttHandlers = null;
+  const macDl = createMacDownlinkHandlers();
 
   if (!mqttEnabled) {
     socket = await createSocket(bindPort);
@@ -1250,7 +1469,18 @@ async function main() {
       clientId: mqttCfg.clientId || `gw-sim-${gatewayEuiBuf.toString('hex')}`,
       clean: mqttCfg.clean !== false,
     });
-    mqttHandlers = createMqttHandlers(mqttMarshaler, mqttTopicPrefix, gatewayEuiBuf, gwProto, mqttClient, mqttCfg);
+    mqttHandlers = createMqttHandlers(mqttMarshaler, mqttTopicPrefix, gatewayEuiBuf, gwProto, mqttClient, mqttCfg, macDl, {
+      onOtaaJoinOk(o, devAddrHex) {
+        const lbl = o._vizLabel || o.devEui.toString('hex').toUpperCase();
+        const r = o.nodeState?.rssi ?? -80;
+        const s = o.nodeState?.snr ?? 5;
+        recordVisualizerAfterUplink(o, lbl, r, s, {
+          countTx: false,
+          payloadPreview: `JOIN:${devAddrHex}`,
+          vizJoinOk: true,
+        });
+      },
+    });
 
     mqttClient.on('connect', () => {
       const downTopic = `${mqttTopicPrefix}/gateway/${gatewayEuiBuf.toString('hex')}/command/down`;
@@ -1269,7 +1499,7 @@ async function main() {
       // Send stats heartbeat to mark gateway as active
       function sendGatewayStats() {
         const statsTopic = mqttTopicPrefix + '/gateway/' + gatewayEuiBuf.toString('hex') + '/event/stats';
-        const statsPayload = JSON.stringify({ stat: { time: new Date().toISOString().replace('T', ' ').replace(/\.\d+Z$/, ' UTC'), rxnb: 1, rxok: 1, rxfw: 1, ackr: 100, dwnb: 0, txnb: 0 } });
+        const statsPayload = JSON.stringify({ stat: { time: new Date().toISOString(), rxnb: 1, rxok: 1, rxfw: 1, ackr: 100, dwnb: 0, txnb: 0 } });
         mqttClient.publish(statsTopic, statsPayload, { qos: 0 });
         console.log('[Stats] Sent to', gatewayEuiBuf.toString('hex'));
       }
@@ -1290,7 +1520,7 @@ async function main() {
 
   if (!mqttEnabled) {
     socket.on('message', (msg, rinfo) => {
-      if (rinfo.address !== lnsHost || rinfo.port !== lnsPort) return;
+      if (!sameUdpPeerAddress(lnsHost, rinfo.address) || rinfo.port !== lnsPort) return;
       if (msg.length < 4) return;
       const version = msg[0], tokenHi = msg[1], tokenLo = msg[2], identifier = msg[3];
       if (version !== PROTOCOL_VERSION) return;
@@ -1375,13 +1605,33 @@ console.log('[DEBUG] Using appKeyBuf:', pending.appKeyBuf.toString('hex'));
                     o.macParams = macParams;
                     o.devAddrHex = devAddrHex;
                     o.classC = true;
+                    o.joinRetryCount = 0;
+                    delete o.joinLastAttemptAt;
                     globalDeviceMap[devAddrHex] = o;
                     pendingOtaaDevices.splice(matchedIndex, 1);
                     console.log(`[OTAA] Join Accept OK | DevAddr: ${devAddrHex} | DevEUI: ${o.devEui.toString('hex')} `);
+                    {
+                      const lbl = o._vizLabel || o.devEui.toString('hex').toUpperCase();
+                      const r = o.nodeState?.rssi ?? -80;
+                      const s = o.nodeState?.snr ?? 5;
+                      recordVisualizerAfterUplink(o, lbl, r, s, {
+                        countTx: false,
+                        payloadPreview: `JOIN:${devAddrHex}`,
+                        vizJoinOk: true,
+                      });
+                    }
                     console.log(`[DEBUG] Device stored in globalDeviceMap, keys: ${Object.keys(globalDeviceMap).join(', ')}`);
                   } else {
                     console.warn('[OTAA] Join Accept: no matching device found');
                   }
+                }
+              } else if (mType === 0x03 || mType === 0x05) {
+                const udpDl = applyDataDownlinkMacAndQueue(phyPayload, macDl);
+                if (udpDl && udpDl.macCommands.length > 0) {
+                  const tsu = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+                  console.log(
+                    `[UDP ⬇ ${tsu}] PULL_RESP | ${udpDl.isConfirmed ? 'Confirmed' : 'Unconfirmed'} | DevAddr: ${udpDl.devAddr} | MAC: [${udpDl.macCommands.map((c) => c.name).join(', ')}]`
+                  );
                 }
               }
             }
@@ -1402,12 +1652,26 @@ console.log('[DEBUG] Using appKeyBuf:', pending.appKeyBuf.toString('hex'));
   const pullIntervalMs = Number(config.pullKeepaliveMs || 5000);
   let pullTimer = null;
   if (!mqttEnabled) {
+    // MULTI-GW-PATCH: Support multi-gateway PULL_DATA
     function sendPull() {
-      const pull = createPullDataPacket(gatewayEuiBuf);
-      socket.send(pull, 0, pull.length, lnsPort, lnsHost, (err) => {
-        if (err) console.error('PULL_DATA send failed:', err.message);
-        else console.log('=> PULL_DATA');
-      });
+      const multiGw = config.multiGateway;
+      if (multiGw && multiGw.enabled && multiGw.gateways && multiGw.gateways.length > 0) {
+        multiGw.gateways.forEach((gw, idx) => {
+          const gwEuiBuf = euiStringToBuffer(gw.eui);
+          const pull = createPullDataPacket(gwEuiBuf);
+          socket.send(pull, 0, pull.length, lnsPort, lnsHost, (err) => {
+            if (err) console.error(`[✗] PULL_DATA GW${idx} failed:`, err.message);
+            else console.log(`[📡] PULL GW${idx}: ${gw.eui.slice(0,8)}...`);
+          });
+        });
+      } else {
+        // Original single gateway
+        const pull = createPullDataPacket(gatewayEuiBuf);
+        socket.send(pull, 0, pull.length, lnsPort, lnsHost, (err) => {
+          if (err) console.error('PULL_DATA send failed:', err.message);
+          else console.log('=> PULL_DATA');
+        });
+      }
     }
     sendPull();
     pullTimer = setInterval(sendPull, pullIntervalMs);
@@ -1419,8 +1683,52 @@ console.log('[DEBUG] Using appKeyBuf:', pending.appKeyBuf.toString('hex'));
   let statTimer;
   if (statsEnabled) {
     const sendStat = () => {
-      const stat = { time: nowIso(), rxnb: 0, rxok: 0, rxfw: 0, ackr: 100.0, dwnb: 0, txnb: 0 };
-      if (!mqttEnabled) {
+      const stat = { time: nowGoTime(), rxnb: 0, rxok: 0, rxfw: 0, ackr: 100.0, dwnb: 0, txnb: 0 };
+      
+      // MULTI-GW-PATCH: Send stats for all gateways in multi-gateway mode
+      const multiGw = config.multiGateway;
+      if (multiGw && multiGw.enabled && multiGw.gateways && multiGw.gateways.length > 0) {
+        multiGw.gateways.forEach((gw, idx) => {
+          const gwEuiBuf = euiStringToBuffer(gw.eui);
+          if (!mqttEnabled) {
+            const pkt = createPushStatPacket(gwEuiBuf, stat);
+            socket.send(pkt, 0, pkt.length, lnsPort, lnsHost, (err) => {
+              if (err) console.error(`[✗] PUSH_DATA (stat) GW${idx} failed:`, err.message);
+              else console.log(`[📊] Stats GW${idx}: ${gw.eui.slice(0,8)}...`);
+            });
+          } else {
+            const topic = `${mqttTopicPrefix}/gateway/${gw.eui}/event/stats`;
+            let payload;
+            if (gwProto || mqttMarshaler === 'protobuf') {
+              const GatewayStats = gwProto.lookupType('gw.GatewayStats');
+              const now = new Date();
+              const statsMsg = GatewayStats.create({
+                gatewayId: gw.eui,
+                time: { seconds: Math.floor(now.getTime() / 1000), nanos: (now.getTime() % 1000) * 1e6 },
+                rxPacketsReceived: stat.rxnb,
+                rxPacketsReceivedOk: stat.rxok,
+                txPacketsReceived: stat.rxfw,
+                txPacketsEmitted: stat.txnb,
+              });
+              payload = Buffer.from(GatewayStats.encode(statsMsg).finish());
+            } else {
+              payload = JSON.stringify({
+                gatewayID: gw.eui,
+                time: stat.time,
+                rxPacketsReceived: stat.rxnb,
+                rxPacketsReceivedOK: stat.rxok,
+                txPacketsReceived: stat.rxfw,
+                txPacketsEmitted: stat.txnb,
+              });
+            }
+            mqttClient.publish(topic, payload, { qos: mqttCfg.qos || 0 }, (err) => {
+              if (err) console.error(`[✗] Stats publish GW${idx} failed:`, err.message);
+              else { statsCount++; console.log(`[📊] Stats #${statsCount} GW${idx}`); }
+            });
+          }
+        });
+      } else if (!mqttEnabled) {
+        // Original single gateway stats
         const pkt = createPushStatPacket(gatewayEuiBuf, stat);
         socket.send(pkt, 0, pkt.length, lnsPort, lnsHost, (err) => {
           if (err) console.error('PUSH_DATA (stat) send failed:', err.message);
@@ -1483,6 +1791,14 @@ console.log('[DEBUG] Using appKeyBuf:', pending.appKeyBuf.toString('hex'));
 
     let sentCount = 0;
 
+    function vizPayloadPreview(joinReq, b64, frmBytes) {
+      try {
+        if (joinReq && b64) return Buffer.from(b64, 'base64').toString('hex').slice(0, 48);
+        if (frmBytes && Buffer.isBuffer(frmBytes)) return frmBytes.toString('hex').slice(0, 48);
+      } catch (e) { /* ignore */ }
+      return '';
+    }
+
     function readIntervalMs() {
       const raw = (uplinkCfg.intervalMs !== undefined && uplinkCfg.intervalMs !== null)
         ? uplinkCfg.intervalMs
@@ -1491,6 +1807,7 @@ console.log('[DEBUG] Using appKeyBuf:', pending.appKeyBuf.toString('hex'));
     }
 
     const sendUplink = () => {
+      if (!simulationRuntime.running) return;
       if (!uplinkCfg || uplinkCfg.enabled === false) return;
       const countLimit = Number(uplinkCfg.count || 0);
       if (countLimit > 0 && sentCount >= countLimit) return;
@@ -1511,12 +1828,29 @@ console.log('[DEBUG] Using appKeyBuf:', pending.appKeyBuf.toString('hex'));
         const phy = buildJoinRequest(lorawanDevice.appEui, lorawanDevice.devEui, devNonce, lorawanDevice.nwkKeyBuf || lorawanDevice.appKeyBuf);
 console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKeyBuf.toString('hex') : 'null', 'appKeyBuf:', lorawanDevice.appKeyBuf ? lorawanDevice.appKeyBuf.toString('hex') : 'null');
         base64Payload = phy.toString('base64');
-        pendingOtaaDevices.push({ nwkKeyBuf: lorawanDevice.nwkKeyBuf || lorawanDevice.appKeyBuf, appKeyBuf: lorawanDevice.appKeyBuf, appEui: lorawanDevice.appEui, devEui: lorawanDevice.devEui, devNonce, otaaDevice: lorawanDevice });
+        // Keep only one pending entry per DevEUI to avoid stale / duplicate matches.
+        const devEuiHex = lorawanDevice.devEui.toString('hex');
+        for (let i = pendingOtaaDevices.length - 1; i >= 0; i--) {
+          if (pendingOtaaDevices[i].devEui && pendingOtaaDevices[i].devEui.toString('hex') === devEuiHex) {
+            pendingOtaaDevices.splice(i, 1);
+          }
+        }
+        pendingOtaaDevices.push({
+          nwkKeyBuf: lorawanDevice.nwkKeyBuf || lorawanDevice.appKeyBuf,
+          appKeyBuf: lorawanDevice.appKeyBuf,
+          appEui: lorawanDevice.appEui,
+          devEui: lorawanDevice.devEui,
+          devNonce,
+          createdAt: Date.now(),
+          otaaDevice: lorawanDevice
+        });
+        lorawanDevice.joinRetryCount = Number(lorawanDevice.joinRetryCount || 0) + 1;
+        lorawanDevice.joinLastAttemptAt = Date.now();
         console.log(`[OTAA] Join Request sent | DevEUI: ${lorawanDevice.devEui.toString('hex')} | DevNonce: ${devNonce} `);
       } else if (lorawanDevice && (!lorawanDevice.isOtaa || lorawanDevice.joined)) {
         const fPort = Number((uplinkCfg.lorawan && uplinkCfg.lorawan.fPort) || 1);
         const devAddrHex = lorawanDevice.devAddrHex || lorawanDevice.devAddr.toString('hex');
-        const macResponses = mqttHandlers ? mqttHandlers.getMacResponses(devAddrHex) : [];
+        const macResponses = macDl.getMacResponses(devAddrHex);
         const needsAck = macResponses.needsAck || false;
         delete macResponses.needsAck;
         const uplinkMacReqs = [];
@@ -1540,6 +1874,10 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
           fCntUp: useFcnt
         });
         
+        const adr =
+          lorawanDevice && typeof lorawanDevice.adr === 'boolean'
+            ? lorawanDevice.adr
+            : resolveLorawanAdrEnabled({}, lorawanCfg);
         const phy = buildLorawanUplinkAbp({
           nwkSKey: useNwkSKey,
           appSKey: useAppSKey,
@@ -1550,6 +1888,7 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
           payload: bytes,
           macCommands: allMacCommands,
           ackDownlink: needsAck,
+          adr,
         });
         const MAX_FCNT = 65535;
         if (lorawanDevice.duplicateNextFcnt) delete lorawanDevice.duplicateNextFcnt;
@@ -1618,7 +1957,12 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
       let rssi, lsnr, rssiStd;
       
       // 尝试使用真实信号模型
-      if (config.signalModel && config.signalModel.enabled && lorawanDevice) {
+      if (
+        config.signalModel &&
+        config.signalModel.enabled &&
+        lorawanDevice &&
+        !(config.multiGateway && config.multiGateway.enabled)
+      ) {
         const deviceIndex = lorawanDevice._deviceIndex || 0;
         const totalDevices = lorawanDevice._totalDevices || 1;
         const devicePosition = lorawanDevice && lorawanDevice.position;
@@ -1684,9 +2028,29 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
           return;
         }
         if (anomalyResult.signalOverride) {
-          rssi = anomalyResult.signalOverride.rssi;
-          lsnr = anomalyResult.signalOverride.snr;
-          console.log(`[ANOMALY] Signal override: RSSI=${rssi}, SNR=${lsnr}`);
+          const so = anomalyResult.signalOverride;
+          // 契约：先 offset 再绝对值覆盖；frequency(MHz)/dataRate(0–5) 作用于 rxpk（见 docs/ANOMALY_RESPONSE.md）
+          if (so.rssiOffset != null && Number.isFinite(Number(so.rssiOffset))) {
+            rssi = (rssi ?? -80) + Number(so.rssiOffset);
+          }
+          if (so.snrOffset != null && Number.isFinite(Number(so.snrOffset))) {
+            lsnr = (lsnr ?? 5) + Number(so.snrOffset);
+          }
+          if (so.rssi != null && Number.isFinite(Number(so.rssi))) rssi = Number(so.rssi);
+          if (so.snr != null && Number.isFinite(Number(so.snr))) lsnr = Number(so.snr);
+          if (so.frequency != null && Number.isFinite(Number(so.frequency))) {
+            chosenFreq = Number(so.frequency);
+          }
+          if (so.dataRate != null && Number.isFinite(Number(so.dataRate))) {
+            const dr = Number(so.dataRate);
+            const drToSf = [12, 11, 10, 9, 8, 7];
+            if (dr >= 0 && dr <= 5) sf = drToSf[dr];
+          }
+          rssi = clamp(rssi ?? -80, -140, 10);
+          lsnr = Math.max(-25, Math.min(15, lsnr ?? 5));
+          console.log(
+            `[ANOMALY] RF metadata override RSSI=${rssi} SNR=${lsnr} freqMHz=${chosenFreq} SF=${sf}`
+          );
         }
       }
       // ====== 异常注入结束 ======
@@ -1703,11 +2067,73 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
       });
 
       if (!mqttEnabled) {
-        const pkt = createPushDataPacket(gatewayEuiBuf, [rxpk]);
-        socket.send(pkt, 0, pkt.length, lnsPort, lnsHost, (err) => {
-          if (err) console.error('PUSH_DATA send failed:', err.message);
-          else console.log('=> PUSH_DATA', label ? `[${label}]` : '', 'size', rxpk.size);
-        });
+        // ====== UDP 模式多网关支持 ======
+        if (config.multiGateway && config.multiGateway.enabled) {
+          const safeDeviceIndex = Number.isFinite(Number(deviceIndex))
+            ? Number(deviceIndex)
+            : (lorawanDevice && Number.isFinite(Number(lorawanDevice._deviceIndex)) ? Number(lorawanDevice._deviceIndex) : 0);
+          const effectiveDevice = lorawanDevice || { name: label || `device-${safeDeviceIndex + 1}` };
+          const devicePos = (effectiveDevice && effectiveDevice.position) || {
+            x: (safeDeviceIndex % 3) * 500,
+            y: (safeDeviceIndex % 2) * 300,
+            z: 2
+          };
+          
+          const multiGwConfig = config.multiGateway;
+          const freqHz = Math.round(Number(chosenFreq) * 1e6);
+          const receptions = multiGwConfig.gateways.map(gw => {
+            const signal = calculateGatewayReceptionForDevice(effectiveDevice, devicePos, gw, config, freqHz);
+            return { eui: gw.eui, name: gw.name, ...signal };
+          }).filter(r => r.canReceive);
+
+          const selected = pickMultiGwReceivers(receptions, multiGwConfig);
+          
+          if (selected.length > 0) {
+            console.log(`[Multi-GW UDP] ${(effectiveDevice && effectiveDevice.name) || safeDeviceIndex}: ${selected.length} gateway(s)`);
+            let pendingUdp = selected.length;
+            const okSignals = [];
+            const isJoinPending = lorawanDevice && lorawanDevice.isOtaa && !lorawanDevice.joined;
+            selected.forEach(gw => {
+              const gwEuiBuf = euiStringToBuffer(gw.eui);
+              const rxpkWithSignal = { ...rxpk, rssi: Math.round(gw.rssi), lsnr: gw.snr };
+              const pkt = createPushDataPacket(gwEuiBuf, [rxpkWithSignal]);
+              socket.send(pkt, 0, pkt.length, lnsPort, lnsHost, (err) => {
+                if (err) console.error(`[✗] UDP MGW ${gw.eui} failed:`, err.message);
+                else {
+                  console.log(`[Multi-GW UDP] Sent to ${gw.eui}: RSSI=${gw.rssi}`);
+                  okSignals.push({ rssi: gw.rssi, snr: gw.snr });
+                }
+                pendingUdp--;
+                if (pendingUdp === 0 && okSignals.length > 0) {
+                  const best = okSignals.reduce((a, b) => (a.rssi >= b.rssi ? a : b));
+                  if (lorawanDevice) {
+                    recordVisualizerAfterUplink(lorawanDevice, label, best.rssi, best.snr, {
+                      countTx: !isJoinPending,
+                      payloadPreview: vizPayloadPreview(isJoinPending, base64Payload, bytes)
+                    });
+                  }
+                }
+              });
+            });
+          } else {
+            console.log(`[Multi-GW UDP] No gateway can receive from ${(effectiveDevice && effectiveDevice.name) || safeDeviceIndex}`);
+          }
+        } else {
+          // 原有单网关发送
+          const pkt = createPushDataPacket(gatewayEuiBuf, [rxpk]);
+          const isJoinPending = lorawanDevice && lorawanDevice.isOtaa && !lorawanDevice.joined;
+          socket.send(pkt, 0, pkt.length, lnsPort, lnsHost, (err) => {
+            if (err) console.error('PUSH_DATA send failed:', err.message);
+            else {
+              console.log('=> PUSH_DATA', label ? `[${label}]` : '', 'size', rxpk.size);
+              recordVisualizerAfterUplink(lorawanDevice, label, rssi, lsnr, {
+                countTx: !isJoinPending,
+                payloadPreview: vizPayloadPreview(isJoinPending, base64Payload, bytes)
+              });
+            }
+          });
+        }
+        // ====== UDP 多网关结束 ======
       } else {
         const topic = `${mqttTopicPrefix}/gateway/${gatewayEuiBuf.toString('hex')}/event/up`;
         const bwHz = Number(rf.bw || 125) * 1000;
@@ -1782,29 +2208,43 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
         
         // 计算各网关接收情况
         const multiGwConfig = config.multiGateway;
+        const freqHzMqtt = Math.round(Number(chosenFreq) * 1e6);
         const receptions = multiGwConfig.gateways.map(gw => {
-          const signal = calculateGatewayReceptionForDevice(lorawanDevice, devicePos, gw, config);
+          const signal = calculateGatewayReceptionForDevice(lorawanDevice, devicePos, gw, config, freqHzMqtt);
           return { eui: gw.eui, name: gw.name, ...signal };
         }).filter(r => r.canReceive);
-        
-        // 根据模式选择
-        let selected = [];
-        switch(multiGwConfig.mode) {
-          case 'overlapping': selected = receptions; break;
-          case 'handover': selected = receptions.length ? [receptions.reduce((a,b) => a.rssi > b.rssi ? a : b)] : []; break;
-          case 'failover': const p = receptions.find(r => r.eui === multiGwConfig.primaryGateway); selected = p ? [p] : (receptions.length ? [receptions[0]] : []); break;
-          default: selected = receptions;
-        }
+
+        const selected = pickMultiGwReceivers(receptions, multiGwConfig);
         
         if (selected.length > 0) {
           console.log(`[Multi-GW] ${lorawanDevice.name || deviceIndex}: ${selected.length} gateway(s) - ${selected.map(g => g.name).join(', ')}`);
+          let pendingMgw = selected.length;
+          const okSignalsMgw = [];
+          const isJoinPendingMgw = lorawanDevice && lorawanDevice.isOtaa && !lorawanDevice.joined;
           selected.forEach(gw => {
             const gwTopic = `${mqttTopicPrefix}/gateway/${gw.eui}/event/up`;
             const rxpkWithSignal = { ...rxpk, rssi: Math.round(gw.rssi), loRaSNR: gw.snr };
             const gwPayload = encodeUplinkPayload(rxpkWithSignal, mqttMarshaler, gwProto);
             mqttClient.publish(gwTopic, gwPayload, { qos: mqttCfg.qos || 0 }, (err) => {
               if (err) console.error(`[✗] MGW ${gw.eui} failed:`, err.message);
-              else console.log(`[Multi-GW] Sent to ${gw.eui}: RSSI=${gw.rssi}`);
+              else {
+                console.log(`[Multi-GW] Sent to ${gw.eui}: RSSI=${gw.rssi}`);
+                okSignalsMgw.push({ rssi: gw.rssi, snr: gw.snr });
+              }
+              pendingMgw--;
+              if (pendingMgw === 0 && okSignalsMgw.length > 0) {
+                const best = okSignalsMgw.reduce((a, b) => (a.rssi >= b.rssi ? a : b));
+                recordVisualizerAfterUplink(lorawanDevice, label, best.rssi, best.snr, {
+                  countTx: !isJoinPendingMgw,
+                  payloadPreview: vizPayloadPreview(isJoinPendingMgw, base64Payload, bytes)
+                });
+                if (lorawanDevice && mqttEnabled && !isJoinPendingMgw) {
+                  const devAddr = lorawanDevice.devAddr ? lorawanDevice.devAddr.toString('hex').toUpperCase() : 'N/A';
+                  const devEuiUp = lorawanDevice.devEui.toString('hex').toUpperCase();
+                  const fCnt = Math.max(0, (lorawanDevice.fCntUp || 0) - 1);
+                  trackUplinkSent(gwPayload, devAddr, devEuiUp, fCnt, confirmed, (uplinkCfg.lorawan && uplinkCfg.lorawan.fPort) || 1);
+                }
+              }
             });
           });
           sentCount += 1; scheduleNextSend(); return;
@@ -1824,7 +2264,9 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
         );
         
         if (mgwResult && mgwResult.length > 0) {
-          // 多网关发送
+          let pendingMgw2 = mgwResult.length;
+          const okSignalsMgw2 = [];
+          const isJoinPendingMgw2 = lorawanDevice && lorawanDevice.isOtaa && !lorawanDevice.joined;
           mgwResult.forEach(gw => {
             const gwTopic = `${mqttTopicPrefix}/gateway/${gw.eui}/event/up`;
             const rxpkWithSignal = {
@@ -1836,7 +2278,24 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
             
             mqttClient.publish(gwTopic, gwPayload, { qos: mqttCfg.qos || 0 }, (err) => {
               if (err) console.error(`[✗] MGW publish to ${gw.eui} failed:`, err.message);
-              else console.log(`[Multi-GW] Sent to ${gw.name || gw.eui}: RSSI=${gw.rssi}, SNR=${gw.snr}`);
+              else {
+                console.log(`[Multi-GW] Sent to ${gw.name || gw.eui}: RSSI=${gw.rssi}, SNR=${gw.snr}`);
+                okSignalsMgw2.push({ rssi: gw.rssi, snr: gw.snr });
+              }
+              pendingMgw2--;
+              if (pendingMgw2 === 0 && okSignalsMgw2.length > 0) {
+                const best = okSignalsMgw2.reduce((a, b) => (a.rssi >= b.rssi ? a : b));
+                recordVisualizerAfterUplink(lorawanDevice, label, best.rssi, best.snr, {
+                  countTx: !isJoinPendingMgw2,
+                  payloadPreview: vizPayloadPreview(isJoinPendingMgw2, base64Payload, bytes)
+                });
+                if (lorawanDevice && mqttEnabled && !isJoinPendingMgw2) {
+                  const devAddr = lorawanDevice.devAddr ? lorawanDevice.devAddr.toString('hex').toUpperCase() : 'N/A';
+                  const devEuiUp = lorawanDevice.devEui.toString('hex').toUpperCase();
+                  const fCnt = Math.max(0, (lorawanDevice.fCntUp || 0) - 1);
+                  trackUplinkSent(gwPayload, devAddr, devEuiUp, fCnt, confirmed, (uplinkCfg.lorawan && uplinkCfg.lorawan.fPort) || 1);
+                }
+              }
             });
           });
           
@@ -1855,34 +2314,16 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
         mqttClient.publish(topic, payloadOut, { qos: mqttCfg.qos || 0 }, (err) => {
           if (err) console.error('[✗] Uplink publish failed:', err.message);
           else {
-            uplinkCount++;
-            const timestamp = new Date().toLocaleTimeString('zh-CN', { hour12: false });
-            const devAddr = lorawanDevice && lorawanDevice.devAddr ? lorawanDevice.devAddr.toString('hex').toUpperCase() : 'N/A';
-            const devEuiUp = lorawanDevice ? lorawanDevice.devEui.toString('hex').toUpperCase() : 'N/A';
-            const fCnt = lorawanDevice ? lorawanDevice.fCntUp - 1 : 0;
-            console.log(`[⬆ ${timestamp}] Uplink #${uplinkCount} | ${label || 'device'} | DevAddr:${devAddr} FCnt:${fCnt}`);
-            if (lorawanDevice && mqttEnabled) {
+            const isJoinPending = lorawanDevice && lorawanDevice.isOtaa && !lorawanDevice.joined;
+            recordVisualizerAfterUplink(lorawanDevice, label, rssi, lsnr, {
+              countTx: !isJoinPending,
+              payloadPreview: vizPayloadPreview(isJoinPending, base64Payload, bytes)
+            });
+            if (lorawanDevice && mqttEnabled && !isJoinPending) {
+              const devAddr = lorawanDevice.devAddr ? lorawanDevice.devAddr.toString('hex').toUpperCase() : 'N/A';
+              const devEuiUp = lorawanDevice.devEui.toString('hex').toUpperCase();
+              const fCnt = Math.max(0, (lorawanDevice.fCntUp || 0) - 1);
               trackUplinkSent(payloadOut, devAddr, devEuiUp, fCnt, confirmed, (uplinkCfg.lorawan && uplinkCfg.lorawan.fPort) || 1);
-            }
-            // 更新可视化状态
-            simState.stats.uplinks = uplinkCount;
-            if (lorawanDevice) {
-              const existingNode = simState.nodes.find(n => n.eui === devEuiUp);
-              const newNode = {
-                eui: devEuiUp,
-                name: label || devEuiUp.slice(-4),
-                devAddr: devAddr,
-                fCnt: fCnt,
-                joined: lorawanDevice.joined,
-                rssi: lorawanDevice.nodeState?.rssi || existingNode?.rssi || -80,
-                snr: lorawanDevice.nodeState?.snr || existingNode?.snr || 5,
-                uplinks: uplinkCount,
-                position: lorawanDevice.position,
-                anomaly: lorawanDevice.anomaly
-              };
-              const idx = simState.nodes.findIndex(n => n.eui === devEuiUp);
-              if (idx >= 0) simState.nodes[idx] = newNode;
-              else simState.nodes.push(newNode);
             }
           }
         });
@@ -1894,17 +2335,26 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
     const scheduleNextSend = () => {
       if (!uplinkCfg || uplinkCfg.enabled === false) return;
       const intervalMs = readIntervalMs();
+      const joinRetryIntervalMs = Math.max(1000, Number(uplinkCfg.joinRetryIntervalMs ?? 5000));
+      const joinRetryMaxAttempts = Math.max(1, Number(uplinkCfg.joinRetryMaxAttempts ?? 3));
       const burstCount = Number(uplinkCfg.burstCount || 0);
       const burstIntervalMs = Number(uplinkCfg.burstIntervalMs || 0);
       const silenceAfterBurstMs = Number(uplinkCfg.silenceAfterBurstMs || 0);
       const intervalAfterFirstDataMs = Number(uplinkCfg.intervalAfterFirstDataMs || 0);
       let nextDelay;
-      if (sentCount === 1 && intervalAfterFirstDataMs > 0 && lorawanDevice && lorawanDevice.joined) {
+      // If OTAA join just failed, retry quickly instead of waiting a full uplink interval.
+      if (lorawanDevice && lorawanDevice.isOtaa && !lorawanDevice.joined) {
+        const attempts = Number(lorawanDevice.joinRetryCount || 0);
+        if (attempts >= 1 && attempts <= joinRetryMaxAttempts) {
+          nextDelay = joinRetryIntervalMs;
+        }
+      }
+      if (nextDelay === undefined && sentCount === 1 && intervalAfterFirstDataMs > 0 && lorawanDevice && lorawanDevice.joined) {
         nextDelay = Math.max(50, intervalAfterFirstDataMs);
-      } else if (burstCount > 0 && burstIntervalMs > 0 && silenceAfterBurstMs > 0) {
+      } else if (nextDelay === undefined && burstCount > 0 && burstIntervalMs > 0 && silenceAfterBurstMs > 0) {
         nextDelay = (sentCount > 0 && sentCount % burstCount === 0) ? silenceAfterBurstMs : burstIntervalMs;
         nextDelay = Math.max(50, nextDelay);
-      } else {
+      } else if (nextDelay === undefined) {
         const jitterRatio = uplinkCfg.jitterRatio !== undefined ? Number(uplinkCfg.jitterRatio) : 0.05;
         const maxJitterMs = Math.max(0, Math.floor(intervalMs * jitterRatio));
         const jitter = maxJitterMs > 0 ? (Math.floor(Math.random() * (2 * maxJitterMs + 1)) - maxJitterMs) : 0;
@@ -1984,9 +2434,12 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
             appKeyBuf,
             nwkKeyBuf: appKeyBuf,
             devNonce: Math.floor(Math.random() * 65535),
-            joined: false
+            joined: false,
+            macParams: { ...macParamsDefault },
+            adr: resolveLorawanAdrEnabled({}, lorawanCfg),
           };
           initNodeState(autoDevices.length, otaaDevice, lorawanCfg, globalUplink, regionChannels);
+          otaaDevice._vizLabel = deviceName;
           seenDevices.add(deviceName);
           autoDevices.push({ name: deviceName, lorawanDevice: otaaDevice, uplink: mergeUplinkCfg(globalUplink, lorawanCfg.uplink || {}) });
           continue;
@@ -2003,7 +2456,16 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
           const appSKey = hexToBufLen(appSKeyStr, 16);
           const nwkSKey = hexToBufLen(nwkSKeyStr, 16);
           const fCntUp = getFCntForDevice(globalFCntState, devAddr);
-          const lorawanDevice = { devAddr, nwkSKey, appSKey, devEui, fCntUp, classC, macParams: { ...macParamsDefault } };
+          const lorawanDevice = {
+            devAddr,
+            nwkSKey,
+            appSKey,
+            devEui,
+            fCntUp,
+            classC,
+            macParams: { ...macParamsDefault },
+            adr: resolveLorawanAdrEnabled({}, lorawanCfg),
+          };
           initNodeState(autoDevices.length, lorawanDevice, lorawanCfg, globalUplink, regionChannels);
           globalDeviceMap[devAddr.toString('hex')] = lorawanDevice;
           seenDevices.add(deviceName);
@@ -2024,6 +2486,7 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
     const devEuiBase = (lorawanCfg.devEuiStart || lorawanCfg.devEui || '0102030405060701').toString().trim();
     for (let i = 0; i < config.devices.length; i++) {
       const d = config.devices[i];
+      if (!d || d.enabled === false) continue;
       const act = (d.lorawan && d.lorawan.activation) || d.activation || 'OTAA';
       if (act !== 'OTAA') continue;
       const appEui = (d.lorawan && d.lorawan.appEui) ? hexToBufLen(String(d.lorawan.appEui).trim(), 8) : genSequentialDevEui(appEuiBase, i);
@@ -2042,12 +2505,39 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
         appKeyBuf,
         nwkKeyBuf: nwkKeyBuf,
         devNonce: 0,
-        joined: false
+        joined: false,
+        macParams: { ...macParamsDefault },
+        adr: resolveLorawanAdrEnabled(d, lorawanCfg),
       };
       if (d.adrReject) otaaDevice.adrReject = true;
       if (d.devStatus) otaaDevice.devStatus = d.devStatus;
       if (d.duplicateFirstData) otaaDevice.duplicateFirstData = true;
       if (d.lorawan && d.lorawan.dataRate !== undefined) otaaDevice.macParams.dataRate = Number(d.lorawan.dataRate);
+      if (d.position && typeof d.position === 'object') {
+        otaaDevice.position = {
+          x: Number(d.position.x) || 0,
+          y: Number(d.position.y) || 0,
+          z: d.position.z != null ? Number(d.position.z) : 2,
+        };
+      } else if (d.location && typeof d.location === 'object') {
+        otaaDevice.position = {
+          x: Number(d.location.x) || 0,
+          y: Number(d.location.y) || 0,
+          z: d.location.z != null ? Number(d.location.z) : 2,
+        };
+      } else if (
+        d.nodeState &&
+        typeof d.nodeState === 'object' &&
+        (d.nodeState.x !== undefined || d.nodeState.y !== undefined)
+      ) {
+        otaaDevice.position = {
+          x: Number(d.nodeState.x) || 0,
+          y: Number(d.nodeState.y) || 0,
+          z: d.nodeState.z != null ? Number(d.nodeState.z) : 2,
+        };
+      }
+      if (d.anomaly) otaaDevice.anomaly = d.anomaly;
+      otaaDevice._vizLabel = d.name || `otaa-${i + 1}`;
       initNodeState(i, otaaDevice, lorawanCfg, globalUplink, regionChannels, d.nodeState);
       autoDevices.push({
         name: d.name || `otaa-${i + 1}`,
@@ -2088,12 +2578,15 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
           appKeyBuf,
             nwkKeyBuf: appKeyBuf,
           devNonce: 0,
-          joined: false
+          joined: false,
+          macParams: { ...macParamsDefault },
+          adr: resolveLorawanAdrEnabled(applied, lorawanCfg),
         };
         if (applied.adrReject) otaaDevice.adrReject = true;
         if (applied.devStatus) otaaDevice.devStatus = applied.devStatus;
         if (applied.duplicateFirstData || (applied.uplink && applied.uplink.duplicateFirstData)) otaaDevice.duplicateFirstData = true;
         if (applied.lorawan && applied.lorawan.dataRate !== undefined) otaaDevice.macParams.dataRate = Number(applied.lorawan.dataRate);
+        otaaDevice._vizLabel = `node-${i + 1}-${templateId}`;
         initNodeState(i, otaaDevice, lorawanCfg, globalUplink, regionChannels, applied.nodeState);
         autoDevices.push({
           name: `node-${i + 1}-${templateId}`,
@@ -2122,7 +2615,16 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
         dataRate: 0, txPower: 0, channelMask: 0xFFFF, nbTrans: 1,
         channels: [923.2, 923.4, 923.6, 923.8, 924.0, 924.2, 924.4, 924.6],
       };
-      const lorawanDevice = { devAddr, nwkSKey, appSKey, devEui, fCntUp, classC, macParams };
+      const lorawanDevice = {
+        devAddr,
+        nwkSKey,
+        appSKey,
+        devEui,
+        fCntUp,
+        classC,
+        macParams,
+        adr: resolveLorawanAdrEnabled({}, lorawanCfg),
+      };
       const regionChannels = (REGIONS['AS923-1'] && REGIONS['AS923-1'].channels) || [];
       initNodeState(i, lorawanDevice, lorawanCfg, globalUplink, regionChannels);
       globalDeviceMap[devAddr.toString('hex')] = lorawanDevice;
@@ -2140,6 +2642,7 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
       const appEui = n > 1 ? genSequentialDevEui(lorawanCfg.appEuiStart.trim(), i) : hexToBufLen(lorawanCfg.appEui.trim(), 8);
       const devEui = n > 1 ? genSequentialDevEui(lorawanCfg.devEuiStart.trim(), i) : hexToBufLen(lorawanCfg.devEui.trim(), 8);
       const appKeyBuf = hexToBufLen(lorawanCfg.appKey.trim(), 16);
+      const otaaNamePart = lorawanCfg.otaaName ? `${lorawanCfg.otaaName}-${i + 1}` : `otaa-node-${i + 1}`;
       const otaaDevice = {
         isOtaa: true,
         appEui,
@@ -2148,10 +2651,26 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
         appKeyBuf,
             nwkKeyBuf: appKeyBuf,
         devNonce: 0,
+        joined: false,
+        macParams: {
+          maxEIRP: 16,
+          uplinkDwellTime: 400,
+          downlinkDwellTime: 400,
+          rx1DROffset: 0,
+          rx2DataRate: 2,
+          rx2Frequency: 923200000,
+          dataRate: 0,
+          txPower: 0,
+          channelMask: 0xffff,
+          nbTrans: 1,
+          channels: [923.2, 923.4, 923.6, 923.8, 924.0, 924.2, 924.4, 924.6],
+        },
+        adr: resolveLorawanAdrEnabled({}, lorawanCfg),
       };
+      otaaDevice._vizLabel = otaaNamePart;
       initNodeState(i, otaaDevice, lorawanCfg, globalUplink, regionChannels);
       autoDevices.push({
-        name: lorawanCfg.otaaName ? `${lorawanCfg.otaaName}-${i + 1}` : `otaa-node-${i + 1}`,
+        name: otaaNamePart,
         lorawanDevice: otaaDevice,
         uplink: mergeUplinkCfg(globalUplink, lorawanCfg.uplink || {}),
       });
@@ -2161,6 +2680,8 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
 
   const allDevices = devices.length > 0 ? devices.map(d => ({ name: d.name, uplink: mergeUplinkCfg(globalUplink, d.uplink || {}) })) : [];
   const schedTargets = autoDevices.length > 0 ? autoDevices : (allDevices.length > 0 ? allDevices : null);
+  const simulationCfg = config.simulation || {};
+  const simulationRuntime = { running: simulationCfg.autoStart === true };
 
   if (schedTargets && schedTargets.length > 0) {
     schedTargets.forEach((dev, idx) => {
@@ -2252,14 +2773,33 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
   }
 
   const controlCfg = config.controlServer || config.control || {};
-  if (controlCfg.enabled && (controlCfg.port || controlCfg.port === 0)) {
+  if (controlCfg.enabled) {
     const controlPort = Number(controlCfg.port) || 9999;
     const server = http.createServer((req, res) => {
       const send = (status, body) => {
-        res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.writeHead(status, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        });
         res.end(typeof body === 'string' ? body : JSON.stringify(body));
       };
+      if (req.method === 'OPTIONS') return send(204, {});
       const url = req.url || '';
+      if ((req.method === 'GET' || req.method === 'POST') && (url.startsWith('/start') || url === '/start')) {
+        simulationRuntime.running = true;
+        updateSimState({ running: true });
+        return send(200, { ok: true, running: true, message: 'Simulation started.' });
+      }
+      if ((req.method === 'GET' || req.method === 'POST') && (url.startsWith('/stop') || url === '/stop')) {
+        simulationRuntime.running = false;
+        updateSimState({ running: false });
+        return send(200, { ok: true, running: false, message: 'Simulation paused.' });
+      }
+      if (req.method === 'GET' && (url.startsWith('/status') || url === '/status')) {
+        return send(200, { ok: true, running: simulationRuntime.running });
+      }
       if ((req.method === 'GET' || req.method === 'POST') && (url.startsWith('/reset') || url === '/reset')) {
         let devEui = null;
         if (req.method === 'POST') {
@@ -2295,10 +2835,10 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
         const n = resetAllOtaa();
         return send(200, { ok: true, message: `${n} OTAA device(s) reset for re-join.` });
       }
-      send(404, { ok: false, message: 'Not found. Use GET/POST /reset?devEui=... or POST /reset with body { devEui }. Omit devEui to reset all OTAA.' });
+      send(404, { ok: false, message: 'Not found. Use /start, /stop, /status, /reset.' });
     });
     server.listen(controlPort, controlCfg.host || '0.0.0.0', () => {
-      console.log(`[Control] HTTP server on port ${controlPort} | POST /reset { "devEui": "..." } or GET /reset?devEui=... to reset device; omit devEui to reset all OTAA.`);
+      console.log(`[Control] HTTP server on port ${controlPort} | /start /stop /status /reset`);
     });
   }
 
@@ -2315,22 +2855,55 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 
+  /** 初始化状态导出（sim-state.json）：DevEUI、name、地图坐标与 ChirpStack/JSON 中设备名一致 */
+  const initialVizNodes = [];
+  if (schedTargets && schedTargets.length > 0) {
+    for (const dev of schedTargets) {
+      const ld = dev.lorawanDevice;
+      if (!ld || !ld.devEui) continue;
+      const devEuiUp = ld.devEui.toString('hex').toUpperCase();
+      initialVizNodes.push({
+        eui: devEuiUp,
+        name: (dev.name && String(dev.name)) || devEuiUp.slice(-4),
+        devAddr: ld.devAddr ? ld.devAddr.toString('hex').toUpperCase() : 'N/A',
+        fCnt: ld.joined ? Math.max(0, (ld.fCntUp || 0) - 1) : 0,
+        joined: Boolean(ld.joined),
+        rssi: ld.nodeState?.rssi ?? -80,
+        snr: ld.nodeState?.snr ?? 5,
+        uplinks: 0,
+        position: ld.position,
+        anomaly: ld.anomaly,
+        lastSeen: null,
+      });
+    }
+  }
+
   // ===== 启动状态导出器 =====
   const stateIntervalMs = config.visualizer?.stateIntervalMs || 1000;
   startStateExporter(stateIntervalMs);
   
   // 初始化状态
   updateSimState({
-    running: true,
-    gateways: config.multiGateway?.enabled ? config.multiGateway.gateways : [{ eui: config.gatewayEui, name: 'default-gateway' }],
+    running: simulationRuntime.running,
+    gateways: config.multiGateway?.enabled
+      ? config.multiGateway.gateways
+      : [
+          {
+            eui: config.gatewayEui,
+            name: 'default-gateway',
+            position: config.signalModel?.gatewayPosition || { x: 0, y: 0, z: 30 },
+          },
+        ],
     config: {
       signalModel: config.signalModel,
       multiGateway: config.multiGateway
     },
-    stats: { uplinks: 0, joins: 0, errors: 0 }
+    stats: { uplinks: 0, joins: 0, errors: 0 },
+    packetLog: [],
+    nodes: initialVizNodes,
   });
-  console.log(`[Visualizer] State exporter started (interval: ${stateIntervalMs}ms)`);
-  console.log(`[Visualizer] Open http://localhost:3030 to view`);
+  console.log(`[State] State exporter started (interval: ${stateIntervalMs}ms)`);
+  console.log(`[State] Write file: ${SIM_STATE_FILE} (read by local scripts/tools)`);
   // ===== 状态导出器结束 =====
 
   console.log('\n[✓] LoRaWAN Gateway Simulator started (standalone). Press Ctrl+C to stop.\n');
@@ -2341,440 +2914,9 @@ main().catch((err) => {
   process.exit(1);
 });
 // ===============================
-// 信号模型集成补丁 - 添加到 index.js 顶部
+// 异常注入：injectAnomaly 来自 ./anomaly_module.js（单一事实来源）。
 // ===============================
 
-// 在文件顶部，其他函数定义之后添加:
-
-// ----- 物理层信号模型 (Physical Layer Signal Model) -----
-const PATH_LOSS_EXPONENT = {
-  'free-space': 2.0,
-  'suburban': 2.7,
-  'urban': 3.5,
-  'dense-urban': 4.0,
-  'indoor': 4.0
-};
-
-const DEFAULT_SIGNAL_MODEL = {
-  enabled: false,  // 默认关闭，向后兼容
-  nodePosition: { x: 0, y: 0, z: 2 },
-  gatewayPosition: { x: 500, y: 0, z: 30 },
-  environment: 'urban',
-  txPower: 16,
-  txGain: 2.15,
-  rxGain: 5.0,
-  cableLoss: 0.5,
-  noiseFloor: -120,
-  shadowFadingStd: 8,
-  fastFadingEnabled: true,
-  timeVariation: true
-};
-
-function calculateDistance(pos1, pos2) {
-  const dx = (pos1.x || 0) - (pos2.x || 0);
-  const dy = (pos1.y || 0) - (pos2.y || 0);
-  const dz = (pos1.z || 0) - (pos2.z || 0);
-  return Math.sqrt(dx*dx + dy*dy + dz*dz);
-}
-
-function calculateFSPL(distance, frequencyHz) {
-  const d_km = distance / 1000;
-  const f_mhz = frequencyHz / 1000000;
-  if (d_km <= 0 || f_mhz <= 0) return 0;
-  return 20 * Math.log10(d_km) + 20 * Math.log10(f_mhz) + 32.44;
-}
-
-function gaussianRandom(mean = 0, std = 1) {
-  const u1 = Math.random();
-  const u2 = Math.random();
-  const z0 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-  return z0 * std + mean;
-}
-
-function rayleighFading() {
-  const u1 = Math.random();
-  const u2 = Math.random();
-  const r = Math.sqrt(-2 * Math.log(u1));
-  const theta = 2 * Math.PI * u2;
-  return r * Math.cos(theta);
-}
-
-function generateDevicePosition(index, totalDevices, basePosition, spread = 1000) {
-  const angle = index * 2.4;
-  const radius = spread * Math.sqrt((index + 1) / totalDevices);
-  return {
-    x: (basePosition.x || 0) + radius * Math.cos(angle),
-    y: (basePosition.y || 0) + radius * Math.sin(angle),
-    z: (basePosition.z || 2) + Math.random() * 3
-  };
-}
-
-function calculateRealisticSignal(deviceIdx, totalDevices, deviceConfig, globalConfig, timestamp) {
-  const signalCfg = globalConfig.signalModel || {};
-  const model = { ...DEFAULT_SIGNAL_MODEL, ...signalCfg };
-  
-  if (!model.enabled) {
-    // 向后兼容：使用随机但合理的值
-    return { 
-      rssi: -70 + Math.random() * 20, 
-      snr: 5 + Math.random() * 5,
-      rssiStd: 2 
-    };
-  }
-
-  // 为每个设备生成固定位置
-  const nodePos = generateDevicePosition(
-    deviceIdx, 
-    totalDevices, 
-    model.nodePosition, 
-    2000
-  );
-  const gwPos = model.gatewayPosition;
-  const distance = calculateDistance(nodePos, gwPos);
-  
-  const frequency = deviceConfig.frequency || 923200000;
-  const fspl = calculateFSPL(distance, frequency);
-  const plExponent = PATH_LOSS_EXPONENT[model.environment] || 3.5;
-  const envLoss = Math.max(0, (plExponent - 2.0) * 10 * Math.log10(Math.max(0.1, distance / 1000)));
-  const shadowFading = gaussianRandom(0, model.shadowFadingStd);
-  
-  let fastFading = 0;
-  if (model.fastFadingEnabled && model.timeVariation) {
-    const timeVar = (timestamp / 1000) % 100;
-    fastFading = rayleighFading() * 2 * Math.sin(timeVar);
-  }
-  
-  const totalLoss = fspl + envLoss + shadowFading + fastFading + model.cableLoss;
-  const rssi = model.txPower + model.txGain + model.rxGain - totalLoss;
-  const noiseFigure = 6;
-  const snr = rssi - model.noiseFloor - noiseFigure;
-  
-  return {
-    rssi: Math.round(Math.max(-140, Math.min(-30, rssi)) * 10) / 10,
-    snr: Math.round(Math.max(-25, Math.min(15, snr)) * 10) / 10,
-    rssiStd: Math.round(Math.sqrt(Math.pow(model.shadowFadingStd, 2) + (model.fastFadingEnabled ? 4 : 0)) * 10) / 10,
-    distance: Math.round(distance),
-    pathLoss: Math.round(totalLoss * 10) / 10
-  };
-}
-
-// ----- 信号模型结束 -----
-
-// ===============================
-// 异常场景和多网关模块 (Auto-injected)
-// ===============================
-// ===============================
-// 异常场景注入模块 - Anomaly Injection Module
-// ===============================
-
-const ANOMALY_SCENARIOS = {
-  // FCnt重复: 发送相同的FCnt，测试NS防重放
-  'fcnt-duplicate': {
-    description: 'Send duplicate FCnt to test replay protection',
-    inject: (device, payload, fCnt, params) => {
-      // 不递增FCnt，下次发送相同值
-      if (device.fCntUp > 0) {
-        device.fCntUp--; // 回退FCnt
-        console.log(`[ANOMALY] FCnt duplicate injected for ${device.name}: FCnt=${fCnt}`);
-      }
-      return payload;
-    }
-  },
-  
-  // FCnt跳变: 大幅度跳变FCnt，测试NS容错
-  'fcnt-jump': {
-    description: 'Jump FCnt by large value to test session recovery',
-    inject: (device, payload, fCnt, params) => {
-      const jump = params.jump || 1000;
-      device.fCntUp += jump;
-      console.log(`[ANOMALY] FCnt jump injected for ${device.name}: +${jump}`);
-      return payload;
-    }
-  },
-  
-  // MIC损坏: 翻转MIC字节，测试完整性验证
-  'mic-corrupt': {
-    description: 'Corrupt MIC bytes to test integrity check',
-    inject: (device, payload, fCnt, params) => {
-      const flipBits = params.flipBits || 2;
-      const micStart = payload.length - 4;
-      for (let i = 0; i < flipBits; i++) {
-        const byteIdx = micStart + (i % 4);
-        const bitIdx = Math.floor(Math.random() * 8);
-        payload[byteIdx] ^= (1 << bitIdx);
-      }
-      console.log(`[ANOMALY] MIC corrupted for ${device.name}: ${flipBits} bits flipped`);
-      return payload;
-    }
-  },
-  
-  // Payload损坏: 随机翻转应用层数据
-  'payload-corrupt': {
-    description: 'Corrupt FRMPayload to test data integrity',
-    inject: (device, payload, fCnt, params) => {
-      // 假设payload是MHDR+FHDR+FCnt+FOpts+Port+Payload+MIC
-      // 我们只损坏中间部分(应用数据)
-      const corruptStart = 8; // 跳过MHDR+FHDR
-      const corruptEnd = payload.length - 4; // 跳过MIC
-      if (corruptEnd > corruptStart) {
-        const pos = corruptStart + Math.floor(Math.random() * (corruptEnd - corruptStart));
-        payload[pos] ^= (1 << Math.floor(Math.random() * 8));
-        console.log(`[ANOMALY] Payload corrupted for ${device.name} at byte ${pos}`);
-      }
-      return payload;
-    }
-  },
-  
-  // 弱信号: 强制设置极低RSSI/SNR
-  'signal-weak': {
-    description: 'Force weak signal to test ADR behavior',
-    inject: (device, payload, fCnt, params) => {
-      // 返回覆盖值，由调用方处理
-      device._anomalyOverride = {
-        rssi: params.rssi || -145,
-        snr: params.snr || -25
-      };
-      console.log(`[ANOMALY] Weak signal for ${device.name}: RSSI=${params.rssi}, SNR=${params.snr}`);
-      return payload;
-    }
-  },
-  
-  // 信号突变: 随机大幅度信号变化
-  'signal-spike': {
-    description: 'Random signal spikes to test stability',
-    inject: (device, payload, fCnt, params) => {
-      device._anomalyOverride = {
-        rssi: -30 - Math.random() * 100, // -30 to -130
-        snr: -20 + Math.random() * 35     // -20 to +15
-      };
-      console.log(`[ANOMALY] Signal spike for ${device.name}`);
-      return payload;
-    }
-  },
-  
-  // 快速Join: 短时间内多次Join
-  'rapid-join': {
-    description: 'Force rejoin shortly after join accept',
-    inject: (device, payload, fCnt, params) => {
-      if (device.joined && !device._rapidJoinScheduled) {
-        device._rapidJoinScheduled = true;
-        const delay = params.delayMs || 2000;
-        const maxAttempts = params.maxAttempts || 5;
-        
-        setTimeout(() => {
-          device.joined = false;
-          device.fCntUp = 0;
-          device.devAddr = null;
-          console.log(`[ANOMALY] Rapid join triggered for ${device.name}`);
-          
-          // 递增计数器
-          device._rapidJoinCount = (device._rapidJoinCount || 0) + 1;
-          if (device._rapidJoinCount >= maxAttempts) {
-            device._rapidJoinScheduled = false;
-            device._rapidJoinCount = 0;
-          }
-        }, delay);
-      }
-      return payload;
-    }
-  },
-  
-  // DevNonce重复: 重复使用相同的DevNonce
-  'devnonce-repeat': {
-    description: 'Reuse DevNonce to test join rejection',
-    inject: (device, payload, fCnt, params) => {
-      if (!device.joined) {
-        device._forceDevNonce = 0; // 强制使用DevNonce=0
-        console.log(`[ANOMALY] DevNonce repeat for ${device.name}: forcing DevNonce=0`);
-      }
-      return payload;
-    }
-  },
-  
-  // Confirmed不ACK: 模拟ACK丢失
-  'confirmed-noack': {
-    description: 'Simulate missing ACK for confirmed uplink',
-    inject: (device, payload, fCnt, params) => {
-      device._skipNextAck = true;
-      console.log(`[ANOMALY] Confirmed no-ACK for ${device.name}`);
-      return payload;
-    }
-  },
-  
-  // 随机丢包: 模拟空中丢包
-  'random-drop': {
-    description: 'Randomly drop uplinks to simulate packet loss',
-    inject: (device, payload, fCnt, params) => {
-      const dropRate = params.dropRate || 0.3;
-      if (Math.random() < dropRate) {
-        device._dropThisUplink = true;
-        console.log(`[ANOMALY] Uplink dropped for ${device.name}`);
-      }
-      return payload;
-    }
-  }
-,
-
-  // ===== 扩展异常场景 (新增8种) =====
-  
-  // 11. 错误DevAddr: 使用其他设备的DevAddr
-  'wrong-devaddr': {
-    description: 'Use wrong DevAddr to test address validation',
-    inject: (device, payload, fCnt, params) => {
-      const wrongAddr = params.devaddr || 'DEADBEEF';
-      const wrongAddrBuf = Buffer.from(wrongAddr, 'hex');
-      if (payload.length >= 5) {
-        payload[1] = wrongAddrBuf[3] || 0xDE;
-        payload[2] = wrongAddrBuf[2] || 0xAD;
-        payload[3] = wrongAddrBuf[1] || 0xBE;
-        payload[4] = wrongAddrBuf[0] || 0xEF;
-      }
-      console.log('[ANOMALY] Wrong DevAddr for ' + device.name + ': ' + wrongAddr);
-      return payload;
-    }
-  },
-
-  // 12. 非法频率: 使用非标准频率
-  'invalid-frequency': {
-    description: 'Transmit on invalid frequency (e.g., 868.1MHz in AS923)',
-    inject: (device, payload, fCnt, params) => {
-      device._anomalyOverride = { frequency: params.freq || 868.1 };
-      console.log('[ANOMALY] Invalid freq for ' + device.name + ': ' + (params.freq || 868.1) + 'MHz');
-      return payload;
-    }
-  },
-
-  // 13. 非法DataRate
-  'invalid-datarate': {
-    description: 'Use unsupported DataRate',
-    inject: (device, payload, fCnt, params) => {
-      device._anomalyOverride = { dataRate: params.dr || 15 };
-      console.log('[ANOMALY] Invalid DR for ' + device.name + ': DR' + (params.dr || 15));
-      return payload;
-    }
-  },
-
-  // 14. MIC错误密钥
-  'mic-wrong-key': {
-    description: 'Calculate MIC with wrong NwkSKey',
-    inject: (device, payload, fCnt, params) => {
-      device._useWrongMicKey = params.key || 'FFEEDDCCBBAA99887766554433221100';
-      console.log('[ANOMALY] Wrong MIC key for ' + device.name);
-      return payload;
-    }
-  },
-
-  // 15. 突发流量
-  'burst-traffic': {
-    description: 'Send burst of packets in short time',
-    inject: (device, payload, fCnt, params) => {
-      console.log('[ANOMALY] Burst traffic pattern for ' + device.name);
-      return payload;
-    }
-  },
-
-  // 16. ADR拒绝
-  'adr-reject': {
-    description: 'Reject ADR commands and maintain fixed DR',
-    inject: (device, payload, fCnt, params) => {
-      device._rejectADR = true;
-      console.log('[ANOMALY] ADR rejected for ' + device.name);
-      return payload;
-    }
-  },
-
-  // 17. 单信道锁定
-  'single-channel': {
-    description: 'Lock to single channel (no hopping)',
-    inject: (device, payload, fCnt, params) => {
-      device._singleChannel = params.channel || 923.2;
-      console.log('[ANOMALY] Single channel for ' + device.name + ': ' + (params.channel || 923.2));
-      return payload;
-    }
-  },
-
-  // 18. 占空比违规
-  'duty-cycle-violation': {
-    description: 'Violate duty cycle limitations',
-    inject: (device, payload, fCnt, params) => {
-      device._ignoreDutyCycle = true;
-      console.log('[ANOMALY] Duty cycle violation for ' + device.name);
-      return payload;
-    }
-  }};
-
-// 检查是否触发异常
-function shouldTriggerAnomaly(device, trigger, sentCount) {
-  if (!device.anomaly || !device.anomaly.enabled) return false;
-  
-  switch (trigger) {
-    case 'always':
-      return true;
-    case 'every-2nd-uplink':
-      return sentCount > 0 && sentCount % 2 === 0;
-    case 'every-3rd-uplink':
-      return sentCount > 0 && sentCount % 3 === 0;
-    case 'every-5th-uplink':
-      return sentCount > 0 && sentCount % 5 === 0;
-    case 'random-10-percent':
-      return Math.random() < 0.1;
-    case 'random-30-percent':
-      return Math.random() < 0.3;
-    case 'once':
-      return sentCount === 1;
-    case 'on-join-accept':
-      return device._justJoined === true;
-    default:
-      return false;
-  }
-}
-
-// 注入异常
-function injectAnomaly(device, payload, fCnt, sentCount) {
-  if (!device.anomaly || !device.anomaly.enabled) {
-    return { payload, modified: false, signalOverride: null };
-  }
-  
-  const scenario = ANOMALY_SCENARIOS[device.anomaly.scenario];
-  if (!scenario) {
-    console.warn(`[ANOMALY] Unknown scenario: ${device.anomaly.scenario}`);
-    return { payload, modified: false, signalOverride: null };
-  }
-  
-  // 清除之前的覆盖
-  delete device._anomalyOverride;
-  delete device._dropThisUplink;
-  
-  // 检查触发条件
-  if (!shouldTriggerAnomaly(device, device.anomaly.trigger, sentCount)) {
-    return { payload, modified: false, signalOverride: null };
-  }
-  
-  // 执行注入
-  const modifiedPayload = scenario.inject(device, Buffer.from(payload), fCnt, device.anomaly.params || {});
-  
-  return {
-    payload: modifiedPayload,
-    modified: true,
-    signalOverride: device._anomalyOverride || null,
-    dropUplink: device._dropThisUplink || false
-  };
-}
-
-// 获取支持的异常场景列表
-function getSupportedAnomalies() {
-  return Object.entries(ANOMALY_SCENARIOS).map(([key, value]) => ({
-    key,
-    description: value.description
-  }));
-}
-
-// 导出
-module.exports = {
-  injectAnomaly,
-  getSupportedAnomalies,
-  ANOMALY_SCENARIOS
-};
 
 // ===============================
 // 多网关支持模块 - Multi-Gateway Support Module
@@ -2858,25 +3000,8 @@ function selectGateways(device, deviceIndex, totalDevices, config) {
       ...signal
     };
   }).filter(r => r.canReceive);
-  
-  // 根据模式选择
-  switch (multiGwConfig.mode) {
-    case 'overlapping':
-      // 所有能收到的网关都发送
-      return receptions;
-      
-    case 'handover':
-      // 选择信号最强的
-      return receptions.length > 0 ? [receptions.reduce((a, b) => a.rssi > b.rssi ? a : b)] : [];
-      
-    case 'failover':
-      // 优先主网关，失败后备用
-      const primary = receptions.find(r => r.eui === multiGwConfig.primaryGateway);
-      return primary ? [primary] : (receptions.length > 0 ? [receptions[0]] : []);
-      
-    default:
-      return receptions;
-  }
+
+  return pickMultiGwReceivers(receptions, multiGwConfig);
 }
 
 // 构建多网关上行帧
@@ -2899,7 +3024,7 @@ function buildMultiGatewayUplinkFrames(phyPayload, device, deviceIndex, totalDev
       lsnr: rx.snr,
       data: phyPayload.toString('base64'),
       tmst: Date.now() * 1000,
-      time: new Date().toISOString().replace('T', ' ').replace(/\.\d+Z$/, ' UTC')
+      time: new Date().toISOString()
     });
     
     return {
@@ -2972,59 +3097,6 @@ module.exports = {
   sendMultiGatewayUplink,
   MULTI_GATEWAY_EXAMPLE
 };
-// 保存原始函数
-const originalCalculateRealisticSignal = calculateRealisticSignal;
-
-// 重写以支持设备特定位置
-calculateRealisticSignal = function(deviceIdx, totalDevices, deviceConfig, globalConfig, timestamp, deviceSpecificPosition) {
-  const signalCfg = globalConfig.signalModel || {};
-  const model = { ...DEFAULT_SIGNAL_MODEL, ...signalCfg };
-  
-  if (!model.enabled) {
-    return { 
-      rssi: -70 + Math.random() * 20, 
-      snr: 5 + Math.random() * 5,
-      rssiStd: 2 
-    };
-  }
-
-  // 使用设备特定位置或全局位置
-  let nodePos;
-  if (deviceSpecificPosition) {
-    nodePos = deviceSpecificPosition;
-  } else {
-    nodePos = generateDevicePosition(deviceIdx, totalDevices, model.nodePosition, 2000);
-  }
-  
-  const gwPos = model.gatewayPosition;
-  const distance = calculateDistance(nodePos, gwPos);
-  
-  const frequency = deviceConfig.frequency || 923200000;
-  const fspl = calculateFSPL(distance, frequency);
-  const plExponent = PATH_LOSS_EXPONENT[model.environment] || 3.5;
-  const envLoss = Math.max(0, (plExponent - 2.0) * 10 * Math.log10(Math.max(0.1, distance / 1000)));
-  const shadowFading = gaussianRandom(0, model.shadowFadingStd);
-  
-  let fastFading = 0;
-  if (model.fastFadingEnabled && model.timeVariation) {
-    const timeVar = (timestamp / 1000) % 100;
-    fastFading = rayleighFading() * 2 * Math.sin(timeVar);
-  }
-  
-  const totalLoss = fspl + envLoss + shadowFading + fastFading + model.cableLoss;
-  const rssi = model.txPower + model.txGain + model.rxGain - totalLoss;
-  const noiseFigure = 6;
-  const snr = rssi - model.noiseFloor - noiseFigure;
-  
-  return {
-    rssi: Math.round(Math.max(-140, Math.min(-30, rssi)) * 10) / 10,
-    snr: Math.round(Math.max(-25, Math.min(15, snr)) * 10) / 10,
-    rssiStd: Math.round(Math.sqrt(Math.pow(model.shadowFadingStd, 2) + (model.fastFadingEnabled ? 4 : 0)) * 10) / 10,
-    distance: Math.round(distance),
-    pathLoss: Math.round(totalLoss * 10) / 10
-  };
-};
-
 // ====== 多网关发送集成 ======
 // 在原有的 MQTT publish 之前，检查是否启用多网关
 
@@ -3041,33 +3113,18 @@ function sendUplinkWithMultiGateway(phyPayload, device, deviceIndex, totalDevice
   
   // 计算各网关接收情况
   const multiGwConfig = config.multiGateway;
+  const freqHz = Number(config.uplink?.rf?.frequency) || 923200000;
   const receptions = multiGwConfig.gateways.map(gw => {
-    const signal = calculateGatewayReceptionForDevice(device, devicePosition, gw, config);
+    const signal = calculateGatewayReceptionForDevice(device, devicePosition, gw, config, freqHz);
     return {
       eui: gw.eui,
       name: gw.name,
       ...signal
     };
   }).filter(r => r.canReceive);
-  
-  // 根据模式选择
-  let selectedGateways = [];
-  switch (multiGwConfig.mode) {
-    case 'overlapping':
-      selectedGateways = receptions;
-      break;
-    case 'handover':
-      selectedGateways = receptions.length > 0 ? 
-        [receptions.reduce((a, b) => a.rssi > b.rssi ? a : b)] : [];
-      break;
-    case 'failover':
-      const primary = receptions.find(r => r.eui === multiGwConfig.primaryGateway);
-      selectedGateways = primary ? [primary] : (receptions.length > 0 ? [receptions[0]] : []);
-      break;
-    default:
-      selectedGateways = receptions;
-  }
-  
+
+  const selectedGateways = pickMultiGwReceivers(receptions, multiGwConfig);
+
   if (selectedGateways.length === 0) {
     console.log(`[Multi-GW] No gateway can receive from device ${device.name || deviceIndex}`);
     return [];
@@ -3078,40 +3135,13 @@ function sendUplinkWithMultiGateway(phyPayload, device, deviceIndex, totalDevice
   return selectedGateways;
 }
 
-// 辅助函数：计算网关接收情况
-function calculateGatewayReceptionForDevice(device, devicePos, gateway, globalConfig) {
-  const gwPos = gateway.position || { x: 0, y: 0, z: 30 };
-  const dx = devicePos.x - gwPos.x;
-  const dy = devicePos.y - gwPos.y;
-  const dz = devicePos.z - gwPos.z;
-  const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
-  
-  const PATH_LOSS_EXPONENT = {
-    'free-space': 2.0,
-    'suburban': 2.5,
-    'urban': 3.5,
-    'indoor': 4.0
-  };
-  
-  const frequency = 923200000;
-  const fspl = 20 * Math.log10(distance) + 20 * Math.log10(frequency / 1e6) + 32.44;
-  const env = globalConfig.signalModel?.environment || 'urban';
-  const plExponent = PATH_LOSS_EXPONENT[env] || 3.5;
-  const envLoss = Math.max(0, (plExponent - 2.0) * 10 * Math.log10(Math.max(0.1, distance / 1000)));
-  
-  const txPower = globalConfig.signalModel?.txPower || 16;
-  const txGain = globalConfig.signalModel?.txGain || 2.15;
-  const rxGain = gateway.rxGain || 5.0;
-  
-  const rssi = txPower + txGain + rxGain - fspl - envLoss;
-  const noiseFloor = globalConfig.signalModel?.noiseFloor || -120;
-  const snr = rssi - noiseFloor - 6;
-  
-  return {
-    rssi: Math.round(Math.max(-140, Math.min(-30, rssi)) * 10) / 10,
-    snr: Math.round(Math.max(-25, Math.min(15, snr)) * 10) / 10,
-    distance: Math.round(distance),
-    canReceive: rssi > (gateway.rxSensitivity || -137)
-  };
+// 与 calculateGatewayReception 同一套路径损耗/衰落（含 shadow、fast fading），供 UDP/MQTT 多网关路径使用
+function calculateGatewayReceptionForDevice(device, devicePos, gateway, globalConfig, frequencyHz) {
+  const freq =
+    frequencyHz != null && Number.isFinite(Number(frequencyHz))
+      ? Number(frequencyHz)
+      : device?.frequency || globalConfig?.uplink?.rf?.frequency || 923200000;
+  const dev = device && typeof device === 'object' ? { ...device, frequency: freq } : { frequency: freq };
+  return calculateGatewayReception(dev, devicePos, gateway, globalConfig);
 }
 

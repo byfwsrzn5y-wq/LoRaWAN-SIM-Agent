@@ -1,0 +1,14 @@
+{
+  "$comment": "Thin overlay: inherit AS923 multigw preset, override LNS address and OTAA keys for your ChirpStack.",
+  "extends": "presets/chirpstack-as923-udp-v2.json",
+  "simulation": {
+    "gateway": {
+      "address": "127.0.0.1"
+    }
+  },
+  "lorawan": {
+    "appEuiStart": "0000000000000000",
+    "devEuiStart": "18d3bf0000000000",
+    "appKey": "00112233445566778899AABBCCDDEEFF"
+  }
+}

@@ -6,9 +6,14 @@
  */
 
 import { spawn } from 'child_process';
+import { createRequire } from 'module';
 import fs from 'fs';
 import path from 'path';
 import http from 'http';
+
+const require = createRequire(import.meta.url);
+const { validateLorasimConfig, PROFILE_IDS } = require('../src/config/validate-config.js');
+const { readConfig: readSimConfigMerged } = require('../src/config/v20-normalize.js');
 
 const PID_FILE = '.sim.pid';
 const PID_STATE_FILE = '.sim.pid.json';
@@ -33,6 +38,28 @@ function resolveConfig(config) {
   return { ...base, ...config };
 }
 
+/**
+ * 解析为「含有 simulator/index.js 的目录」（cwd 与 config 路径均相对此目录）。
+ * 支持两种填法：直接指向 …/LoRaWAN-SIM/simulator，或指向 Git 克隆根 …/LoRaWAN-SIM（自动落到 simulator/）。
+ */
+function resolveSimulatorRoot(rawPath) {
+  const resolved = path.resolve(String(rawPath).trim());
+  if (!fs.existsSync(resolved)) {
+    throw new Error(`模拟器项目路径不存在: ${resolved}`);
+  }
+  const indexHere = path.join(resolved, 'index.js');
+  if (fs.existsSync(indexHere)) {
+    return resolved;
+  }
+  const nested = path.join(resolved, 'simulator', 'index.js');
+  if (fs.existsSync(nested)) {
+    return path.join(resolved, 'simulator');
+  }
+  throw new Error(
+    `未找到模拟器入口 index.js：在「${resolved}」及「${path.join(resolved, 'simulator')}」均未发现。请将 LORAWAN_SIM_PROJECT_PATH / projectPath 设为含有 index.js 的目录（本仓库为 <克隆路径>/simulator），或设为克隆根目录以自动使用 simulator/ 子目录。`
+  );
+}
+
 function getProjectPath(config) {
   const merged = resolveConfig(config);
   const fromEnv = process.env.LORAWAN_SIM_PROJECT_PATH;
@@ -40,14 +67,10 @@ function getProjectPath(config) {
   const projectPath = fromEnv || fromConfig;
   if (!projectPath) {
     throw new Error(
-      '未配置模拟器项目路径。可设置环境变量 LORAWAN_SIM_PROJECT_PATH，或在插件 configFile 所指 JSON 中设置 projectPath，或在 OpenClaw 插件配置中设置 projectPath'
+      '未配置模拟器运行目录。可设置环境变量 LORAWAN_SIM_PROJECT_PATH，或在 configFile / OpenClaw 插件 config 中设置 projectPath：填 **含 index.js 的 simulator 目录**，或填 **Git 仓库根**（插件会自动使用 simulator/ 子目录）'
     );
   }
-  const resolved = path.resolve(projectPath);
-  if (!fs.existsSync(resolved)) {
-    throw new Error(`模拟器项目路径不存在: ${resolved}`);
-  }
-  return resolved;
+  return resolveSimulatorRoot(projectPath);
 }
 
 function getPidFilePath(projectPath) {
@@ -129,12 +152,13 @@ function getRunningState(projectPath, configPath = null) {
 
 function readConfigFile(projectPath, configPath) {
   const fullPath = path.isAbsolute(configPath)
-    ? configPath
-    : path.join(projectPath, configPath);
+    ? path.resolve(configPath)
+    : path.resolve(projectPath, configPath);
   if (!fs.existsSync(fullPath)) {
     throw new Error(`配置文件不存在: ${fullPath}`);
   }
-  return JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+  // Same merge as index.js: preset / extends, then v2.0 normalization
+  return readSimConfigMerged(fullPath, { cwd: path.dirname(fullPath) });
 }
 
 function writeConfigFile(projectPath, configPath, data) {
@@ -431,7 +455,7 @@ export default function (api) {
         properties: {
           configPath: {
             type: 'string',
-            description: '配置文件路径,相对项目根,例如 configs/config.json,configs/gw2.json',
+            description: '配置文件路径，相对模拟器目录（含 index.js，即本仓库 simulator/），例如 configs/config.json',
           },
         },
         additionalProperties: false,
@@ -563,7 +587,7 @@ export default function (api) {
       properties: {
         configPath: {
           type: 'string',
-          description: '配置文件路径,相对项目根',
+          description: '配置文件路径，相对模拟器目录（含 index.js）',
         },
       },
       additionalProperties: false,
@@ -613,17 +637,50 @@ export default function (api) {
     },
   });
 
+  // ---------- 配置校验（只读）----------
+  api.registerTool({
+    name: 'lorawan_sim_config_validate',
+    description: `校验 LoRaSIM 配置文件（JSON Schema + 场景规则）。官方运行方式：在含 index.js 的目录执行 node index.js -c <configPath>。profiles: ${PROFILE_IDS.join(', ')}。返回 normalizedPreview（脱敏 appKey 前缀）。`,
+    parameters: {
+      type: 'object',
+      properties: {
+        configPath: {
+          type: 'string',
+          description: '配置文件路径，相对模拟器目录；默认 configs/config.json',
+        },
+        profile: {
+          type: 'string',
+          description: `场景：v20-udp | mqtt | multigw | openclaw（默认 v20-udp）。OpenClaw 自动化建议 openclaw。`,
+        },
+      },
+      additionalProperties: false,
+    },
+    async execute(_id, params, { config } = {}) {
+      const projectPath = getProjectPath(config);
+      const configPath = params?.configPath || DEFAULT_CONFIG;
+      const profile = params?.profile || 'v20-udp';
+      const result = validateLorasimConfig({
+        configPath,
+        profile,
+        cwd: projectPath,
+      });
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  });
+
   // ---------- 更新配置（有副作用,可选工具）----------
   api.registerTool(
     {
       name: 'lorawan_sim_config_set',
-      description: '更新模拟器配置。通过点号路径更新单个字段（如 uplink.interval,lorawan.deviceCount）,或传入完整 JSON 片段合并到根。不会覆盖未提及的字段。',
+      description: `更新模拟器配置。通过点号路径更新单个字段（如 uplink.interval,lorawan.deviceCount）,或传入完整 JSON 片段合并到根。不会覆盖未提及的字段。可选 validate_before_write：为 true 时先跑与 lorawan_sim_config_validate 相同的校验，失败则不写入。`,
       parameters: {
         type: 'object',
         properties: {
           configPath: {
             type: 'string',
-            description: '要写入的配置文件路径,相对项目根,默认 configs/config.json',
+            description: '要写入的配置文件路径，相对模拟器目录，默认 configs/config.json',
           },
           path: {
             type: 'string',
@@ -635,6 +692,14 @@ export default function (api) {
           merge: {
             type: 'object',
             description: '要合并到配置根的对象（与 path/value 二选一）',
+          },
+          validate_before_write: {
+            type: 'boolean',
+            description: '为 true 时写入前校验；失败则返回校验结果且不保存',
+          },
+          validate_profile: {
+            type: 'string',
+            description: `与 lorawan_sim_config_validate 的 profile 相同；默认 openclaw。可选值：${PROFILE_IDS.join(', ')}`,
           },
         },
         additionalProperties: false,
@@ -684,6 +749,38 @@ export default function (api) {
           };
         }
 
+        if (params?.validate_before_write === true) {
+          const vProfile = params?.validate_profile || 'openclaw';
+          const tmpName = `.lorasim-validate-${process.pid}-${Date.now()}.json`;
+          const tmpAbs = path.join(projectPath, tmpName);
+          try {
+            fs.writeFileSync(tmpAbs, JSON.stringify(data, null, 2), 'utf8');
+            const v = validateLorasimConfig({
+              configPath: tmpName,
+              profile: vProfile,
+              cwd: projectPath,
+            });
+            if (!v.ok) {
+              return {
+                content: [
+                  {
+                    type: 'text',
+                    text: JSON.stringify({
+                      ok: false,
+                      message: '校验失败，未写入文件',
+                      validation: v,
+                    }, null, 2),
+                  },
+                ],
+              };
+            }
+          } finally {
+            try {
+              if (fs.existsSync(tmpAbs)) fs.unlinkSync(tmpAbs);
+            } catch { /* ignore */ }
+          }
+        }
+
         writeConfigFile(projectPath, configPath, data);
         return {
           content: [
@@ -712,7 +809,7 @@ export default function (api) {
         properties: {
           configPath: {
             type: 'string',
-            description: '要写入的配置文件路径,相对项目根,默认 configs/config.json',
+            description: '要写入的配置文件路径，相对模拟器目录，默认 configs/config.json',
           },
           payload: {
             type: 'string',
@@ -999,7 +1096,7 @@ export default function (api) {
           },
           output_csv: {
             type: 'string',
-            description: '生成的 CSV 路径（相对项目根）,默认 configs/synced-from-chirpstack.csv',
+            description: '生成的 CSV 路径（相对模拟器目录），默认 configs/synced-from-chirpstack.csv',
           },
           limit: {
             type: 'number',
@@ -1227,3 +1324,5 @@ export default function (api) {
     { optional: true }
   );
 }
+
+export { resolveSimulatorRoot };

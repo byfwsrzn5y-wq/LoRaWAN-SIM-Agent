@@ -1,0 +1,47 @@
+{
+  "version": "2.0",
+  "simulation": {
+    "gateway": {
+      "gatewayEui": "19023c6b00000000",
+      "address": "127.0.0.1",
+      "port": 1702
+    },
+    "region": "AS923",
+    "logLevel": "info"
+  },
+  "lorawan": {
+    "enabled": true,
+    "activation": "OTAA",
+    "region": "AS923",
+    "deviceCount": 1,
+    "appEui": "0000000000000000",
+    "appKey": "00112233445566778899AABBCCDDEEFF",
+    "devEui": "18d3bf0000000000"
+  },
+  "uplink": {
+    "enabled": true,
+    "codec": "simple",
+    "intervalMs": 10000,
+    "payloadLength": 5,
+    "lorawan": { "fPort": 2 }
+  },
+  "signalModel": {
+    "enabled": true,
+    "nodePosition": { "x": 700, "y": 446, "z": 2 },
+    "gatewayPosition": { "x": 700, "y": 446, "z": 30 },
+    "environment": "urban",
+    "txPower": 16,
+    "txGain": 2.15,
+    "rxGain": 5,
+    "cableLoss": 0.5,
+    "noiseFloor": -120,
+    "shadowFadingStd": 8,
+    "fastFadingEnabled": true,
+    "timeVariation": true
+  },
+  "multiGateway": {
+    "enabled": false,
+    "gateways": []
+  },
+  "devices": []
+}

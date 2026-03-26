@@ -1,0 +1,74 @@
+{
+  "extends": "presets/chirpstack-as923-udp-v2.json",
+  "simulation": {
+    "gateway": {
+      "address": "127.0.0.1",
+      "port": 1702,
+      "gatewayEui": "19023c6b00000000"
+    },
+    "region": "AS923",
+    "logLevel": "info"
+  },
+  "lorawan": {
+    "activation": "OTAA",
+    "deviceCount": 20,
+    "csvImportPath": "configs/otaa-100-devices.csv"
+  },
+  "uplink": {
+    "enabled": true,
+    "intervalMs": 30000,
+    "codec": "simple",
+    "payloadLength": 5,
+    "lorawan": {
+      "fPort": 2,
+      "confirmed": false
+    }
+  },
+  "multiGateway": {
+    "enabled": true,
+    "mode": "overlapping",
+    "primaryGateway": "19023c6b00000000",
+    "gateways": [
+      {
+        "eui": "19023c6b00000000",
+        "name": "gw-1-sw",
+        "position": { "x": 100, "y": 100, "z": 30 },
+        "rxGain": 5,
+        "rxSensitivity": -137,
+        "cableLoss": 0.5
+      },
+      {
+        "eui": "19023c6b00000001",
+        "name": "gw-2-se",
+        "position": { "x": 1300, "y": 100, "z": 30 },
+        "rxGain": 5,
+        "rxSensitivity": -137,
+        "cableLoss": 0.5
+      },
+      {
+        "eui": "19023c6b00000002",
+        "name": "gw-3-n",
+        "position": { "x": 700, "y": 1139, "z": 30 },
+        "rxGain": 5,
+        "rxSensitivity": -137,
+        "cableLoss": 0.5
+      },
+      {
+        "eui": "19023c6b00000003",
+        "name": "gw-4-west",
+        "position": { "x": -300, "y": 600, "z": 30 },
+        "rxGain": 5,
+        "rxSensitivity": -137,
+        "cableLoss": 0.5
+      },
+      {
+        "eui": "19023c6b00000004",
+        "name": "gw-5-east",
+        "position": { "x": 1700, "y": 600, "z": 30 },
+        "rxGain": 5,
+        "rxSensitivity": -137,
+        "cableLoss": 0.5
+      }
+    ]
+  }
+}
