@@ -1,0 +1,34 @@
+# LoRaWAN-SIM Docs Index
+
+This index is the canonical entry for project documentation and UI v1 integration assets.
+
+## Architecture and Scope
+
+- Project analysis: [`PROJECT_ANALYSIS.md`](PROJECT_ANALYSIS.md)
+- UI information architecture: [`LORAWAN_SIM_UI_INFORMATION_ARCHITECTURE.md`](LORAWAN_SIM_UI_INFORMATION_ARCHITECTURE.md)
+- UI wireframe v1: [`LORAWAN_SIM_UI_WIREFRAME_V1.md`](LORAWAN_SIM_UI_WIREFRAME_V1.md)
+- Inspector config scope: [`LORAWAN_SIM_INSPECTOR_CONFIG_SCOPE.md`](LORAWAN_SIM_INSPECTOR_CONFIG_SCOPE.md)
+
+## API and Orchestration Contracts
+
+- UI API binding spec: [`LORAWAN_SIM_UI_API_BINDING_SPEC.md`](LORAWAN_SIM_UI_API_BINDING_SPEC.md)
+- ChirpStack UI contract: [`LORAWAN_SIM_CHIRPSTACK_UI_CONTRACT.md`](LORAWAN_SIM_CHIRPSTACK_UI_CONTRACT.md)
+- ChirpStack orchestration flow: [`LORAWAN_SIM_CHIRPSTACK_UI_ORCHESTRATION.md`](LORAWAN_SIM_CHIRPSTACK_UI_ORCHESTRATION.md)
+- ChirpStack integration runbook: [`LORAWAN_SIM_CHIRPSTACK_INTEGRATION_RUNBOOK.md`](LORAWAN_SIM_CHIRPSTACK_INTEGRATION_RUNBOOK.md)
+
+## Validation and Freeze
+
+- UI validation matrix: [`LORAWAN_SIM_CHIRPSTACK_UI_VALIDATION_MATRIX.md`](LORAWAN_SIM_CHIRPSTACK_UI_VALIDATION_MATRIX.md)
+- UI v1 freeze checklist: [`LORAWAN_SIM_UI_V1_FREEZE_CHECKLIST.md`](LORAWAN_SIM_UI_V1_FREEZE_CHECKLIST.md)
+
+## Release Governance
+
+- Release SOP: [`LORAWAN_SIM_UI_RELEASE_SOP.md`](LORAWAN_SIM_UI_RELEASE_SOP.md)
+- Release milestones: [`LORAWAN_SIM_UI_RELEASE_MILESTONES.md`](LORAWAN_SIM_UI_RELEASE_MILESTONES.md)
+- Alerting spec: [`LORAWAN_SIM_UI_ALERTING_SPEC.md`](LORAWAN_SIM_UI_ALERTING_SPEC.md)
+- Rollback playbook: [`LORAWAN_SIM_UI_ROLLBACK_PLAYBOOK.md`](LORAWAN_SIM_UI_ROLLBACK_PLAYBOOK.md)
+
+## Related Operational Docs
+
+- OpenClaw quickstart: [`OPENCLAW_QUICKSTART.md`](OPENCLAW_QUICKSTART.md)
+- Anomaly response: [`ANOMALY_RESPONSE.md`](ANOMALY_RESPONSE.md)

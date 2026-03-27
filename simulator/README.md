@@ -84,7 +84,7 @@ node index.js -c configs/your-config.json
 # 薄配置：继承预设，只覆盖 LNS / 密钥等（见 docs/CONFIG_MAP.md）
 node index.js -c configs/example-extends-chirpstack.json
 
-# 一键启动（无前端 UI）
+# 一键启动（模拟器核心，可独立于 UI）
 ./start.sh configs/your-config.json
 ```
 
@@ -126,9 +126,9 @@ npm run sim:validate -- -c ../simulator/configs/example-extends-chirpstack.json 
 npm run sim:cs:gw:check -- -c ../simulator/configs/example-extends-chirpstack.json --env-file ../.env
 ```
 
-### 状态输出（无前端 UI）
+### 状态输出（模拟器核心独立输出）
 
-模拟器会持续写入 `simulator/sim-state.json`，用于本地脚本解析/排障（不再提供浏览器可视化页面）。
+模拟器会持续写入 `simulator/sim-state.json`，用于本地脚本解析/排障。Web 控制台（可选）位于仓库根目录 `ui/`。
 模拟器会在运行中更新状态字段（如 `joined`、`RSSI`、`FCnt`），便于日志/脚本排障。
 
 ### 连接 ChirpStack
@@ -541,7 +541,7 @@ node scripts/chirpstack-provision-otaa-from-config.mjs \
 
 ### 6. 开始测试（启动模拟器）
 
-进入 `simulator/` 目录，用生成的配置启动（无前端 UI）：
+进入 `simulator/` 目录，用生成的配置启动（不依赖 UI）：
 
 ```bash
 cd simulator
