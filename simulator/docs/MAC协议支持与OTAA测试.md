@@ -81,7 +81,7 @@ node index.js -c configs/config-otaa-mac-test.json
 
 ## 四、如何验证“所有 MAC 是否支持”
 
-1. **OTAA 入网**：使用 `config-otaa-mac-test.json` 或上述 OTAA 配置，确认控制台出现 `Join Accept OK`。
+1. **OTAA 入网**：使用 `configs/config-otaa-mac-test.json`（在 `simulator/` 下）或上述 OTAA 配置，确认控制台出现 `Join Accept OK`。
 2. **上行与 ADR**：入网后观察上行；若 ChirpStack 下发 LinkADRReq，控制台会打印 `Downlink | MAC: [LinkADRReq]`，下一包上行应带 LinkADRAns。
 3. **DevStatus**：在 ChirpStack 中对设备执行 “Request device status”，应收到下行 DevStatusReq，模拟器下一包上行带 DevStatusAns（Battery=200, Margin=5）。
 4. **其他 MAC**：若 ChirpStack 或测试工具下发 DutyCycleReq、RXParamSetupReq、NewChannelReq、RXTimingSetupReq、TXParamSetupReq、DLChannelReq，控制台会打印对应下行，且下一包上行 FOpts 中会带相应 Ans。

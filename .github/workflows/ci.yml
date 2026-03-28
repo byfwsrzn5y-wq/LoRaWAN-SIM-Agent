@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  node-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Syntax check (simulator + runner)
+        run: |
+          node --check simulator/index.js
+          node --check simulator/main.js
+          node --check simulator/signal_model.js
+          node --check simulator/anomaly_module.js
+          node --check scripts/ci-module-smoke.js
+          node --check simulator/openclaw-lorawan-sim/index.js
+          node --check scripts/ci-openclaw-resolve-smoke.mjs
+          node --check scripts/chirpstack-inventory.mjs
+          node --check scripts/chirpstack-wipe-application-devices.mjs
+          node --check scripts/generate-otaa-manifest-from-config.mjs
+          node --check scripts/chirpstack-provision-otaa-from-config.mjs
+
+      - name: Module load smoke (no LNS)
+        run: node scripts/ci-module-smoke.js
+
+      - name: OpenClaw projectPath resolution smoke
+        run: node scripts/ci-openclaw-resolve-smoke.mjs
+
+      - name: Simulator tests
+        working-directory: simulator
+        run: npm test
+
+      - name: UI install and build
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build

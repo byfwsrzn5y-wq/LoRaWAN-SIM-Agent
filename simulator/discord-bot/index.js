@@ -28,12 +28,13 @@ const fs = require('fs');
 const CONFIG = {
   discordToken: process.env.DISCORD_TOKEN,
   simulatorPath: process.env.SIMULATOR_PATH || path.join(__dirname, '..'),
-  visualizerPort: process.env.VISUALIZER_PORT || 3030,
   chirpstackApi: process.env.CHIRPSTACK_API || 'http://10.5.40.109:8090/api',
   chirpstackToken: process.env.CHIRPSTACK_TOKEN || '',
   controlPort: process.env.CONTROL_PORT || 9999,
   prefix: '!lora' // 命令前缀
 };
+
+const STATE_FILE = path.join(CONFIG.simulatorPath, 'sim-state.json');
 
 // 状态
 const state = {
@@ -115,19 +116,19 @@ function parseIntent(message) {
       'fcnt重复|fcnt.?dup|重复帧': 'fcnt-duplicate',
       'fcnt跳变|fcnt.?jump|帧计数跳': 'fcnt-jump',
       'mic损坏|mic.?corrupt|mic错误|完整性': 'mic-corrupt',
+      'mac损坏|mac.?corrupt|mac命令': 'mac-corrupt',
       'payload损坏|数据损坏|负载损坏': 'payload-corrupt',
       '弱信号|信号弱|signal.?weak|rssi低': 'signal-weak',
       '信号突变|signal.?spike|信号波动': 'signal-spike',
+      '信号退化|signal.?degrade|degrade': 'signal-degrade',
       '快速join|rapid.?join|频繁入网|重复入网': 'rapid-join',
       'devnonce重复|devnonce.?repeat|随机数重复': 'devnonce-repeat',
       '丢包|random.?drop|packet.?loss|丢帧': 'random-drop',
-      '错误地址|wrong.?addr|地址错误|devaddr错误': 'wrong-devaddr',
-      '非法频率|invalid.?freq|频率错误': 'invalid-frequency',
-      '占空比|duty.?cycle|发送过于频繁': 'duty-cycle-violation',
-      'adr拒绝|adr.?reject|拒绝adr': 'adr-reject',
-      '单信道|single.?channel|锁定信道': 'single-channel',
-      '突发流量|burst|流量突增': 'burst-traffic',
-      '无确认|confirmed.?no.?ack|无ack': 'confirmed-noack'
+      '地址冲突|devaddr|devaddr.?reuse': 'devaddr-reuse',
+      '下行损坏|downlink.?corrupt': 'downlink-corrupt',
+      '网关离线|gateway.?offline': 'gateway-offline',
+      '无确认|confirmed.?no.?ack|无ack': 'confirmed-noack',
+      '错误地址|wrong.?addr': 'devaddr-reuse'
     };
 
     let anomalyType = null;
@@ -270,7 +271,7 @@ async function handleStart(intent, message) {
     return `📡 **模拟器已启动**\n\n` +
            `• 配置: \`${intent.config}\`\n` +
            `• 节点: ${intent.nodes || '配置文件定义'}\n` +
-           `• 可视化: http://localhost:${CONFIG.visualizerPort}`;
+         `• 状态文件: ${STATE_FILE}`;
   } catch (error) {
     return `❌ 启动失败: ${error.message}`;
   }
@@ -302,14 +303,12 @@ async function handleStatus(message) {
     ? Math.round((Date.now() - state.stats.startTime) / 1000)
     : 0;
 
-  let visualizerStatus = '未知';
   let nodeCount = 0;
   try {
     const res = await fetchState();
-    visualizerStatus = res.running ? '运行中' : '空闲';
     nodeCount = res.nodes?.length || 0;
   } catch (e) {
-    visualizerStatus = '未连接';
+    nodeCount = 0;
   }
 
   const emoji = running ? '🟢' : '⚫';
@@ -318,8 +317,7 @@ async function handleStatus(message) {
          `• 配置: ${state.currentConfig || '-'}\n` +
          `• 运行时长: ${duration}秒\n` +
          `• 节点数: ${nodeCount}\n` +
-         `• 上行计数: ${state.stats.uplinks}\n` +
-         `• 可视化: ${visualizerStatus}`;
+         `• 上行计数: ${state.stats.uplinks}`;
 }
 
 async function handleNodes(message) {
@@ -409,7 +407,6 @@ async function handleHelp(message) {
          `**诊断与监控**\n` +
          `• 列出所有节点\n` +
          `• 诊断网络\n` +
-         `• 打开可视化\n\n` +
          `**支持的异常类型**\n` +
          `MIC损坏、FCnt重复、弱信号、丢包、错误地址等18种\n\n` +
          `_前缀: !lora (可选)_`;
@@ -429,24 +426,35 @@ async function handleReset(message) {
 }
 
 async function handleVisualizer(message) {
-  return `🗺️ **可视化界面**\n\n` +
-         `打开浏览器访问: http://localhost:${CONFIG.visualizerPort}\n\n` +
-         `功能:\n` +
-         `• 实时节点位置地图\n` +
-         `• 信号强度显示\n` +
-         `• 异常状态标记\n` +
-         `• 网关覆盖范围`;
+  return `🧭 **调试状态**\n\n本仓库已移除前端可视化（不再提供浏览器可视化服务）。\n` +
+         `你仍可通过 \`/sim-status\` 与 \`/sim-nodes\`（读取 \`${STATE_FILE}\`）查看状态与节点列表。`;
 }
 
 // ==================== 辅助函数 ====================
 
 function fetchState() {
   return new Promise((resolve, reject) => {
-    http.get(`http://localhost:${CONFIG.visualizerPort}/api/state`, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => resolve(JSON.parse(data)));
-    }).on('error', reject);
+    fs.readFile(STATE_FILE, 'utf8', (err, raw) => {
+      if (err) {
+        // 保持 bot 可用：即使还没启动模拟器，也要返回一个空状态结构
+        return resolve({
+          running: false,
+          gateways: [],
+          nodes: [],
+          stats: { uplinks: 0, joins: 0, errors: 0 },
+          packetLog: [],
+          lastUpdate: null,
+          schemaVersion: 1,
+        });
+      }
+
+      try {
+        const parsed = JSON.parse(raw);
+        resolve(parsed);
+      } catch (e) {
+        reject(e);
+      }
+    });
   });
 }
 

@@ -62,7 +62,10 @@ function applyBehaviorTemplate(template, baseline) {
     
     if (template.adrReject !== undefined) out.adrReject = template.adrReject;
     else if (baseline.adrReject !== undefined) out.adrReject = baseline.adrReject;
-    
+
+    if (template.adr !== undefined) out.adr = template.adr;
+    else if (baseline.adr !== undefined) out.adr = baseline.adr;
+
     if (template.duplicateFirstData !== undefined) out.duplicateFirstData = template.duplicateFirstData;
     else if (baseline.duplicateFirstData !== undefined) out.duplicateFirstData = baseline.duplicateFirstData;
   } else {
@@ -71,6 +74,7 @@ function applyBehaviorTemplate(template, baseline) {
     if (template.lorawan) out.lorawan = { ...template.lorawan };
     if (template.devStatus) out.devStatus = { ...template.devStatus };
     if (template.adrReject !== undefined) out.adrReject = template.adrReject;
+    if (template.adr !== undefined) out.adr = template.adr;
     if (template.duplicateFirstData !== undefined) out.duplicateFirstData = template.duplicateFirstData;
   }
   

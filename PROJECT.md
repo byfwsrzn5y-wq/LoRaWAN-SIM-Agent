@@ -1,6 +1,6 @@
 # LoRaWAN World Simulator - 项目计划
 
-> 最后更新: 2026-03-27
+> 最后更新: 2026-03-28
 
 ## 项目定位
 
@@ -18,16 +18,19 @@
 ### 默认运行路径
 
 - **生产与 ChirpStack 联调**：在 `simulator/` 下使用 **`node index.js -c <config>`**、`npm start` 或 **`./start.sh`**（仅启动模拟器核心）。状态文件默认为 `simulator/sim-state.json`。
-- **`main.js`（v2 模块化）**：实验用途；MQTT 不完整、状态/节点导出策略与 `index.js` 未必一致。详见 [`simulator/README.md`](simulator/README.md) 入口表与 [`docs/PROJECT_ANALYSIS.md`](docs/PROJECT_ANALYSIS.md)。
+- **仓库根统一 CLI**：`node scripts/lorasim-cli.mjs`（`help` / `run` / `validate` / `cs-*`），与根 [`README.md`](README.md) 最短路径一致。
+- **`main.js`**：已弃用，仅转发到 `index.js`；运动/环境区/衍生异常在配置满足条件时由 **`index.js` + `src/runtime/motion-environment.js`** 加载。详见 [`simulator/README.md`](simulator/README.md) 与 [`docs/PROJECT_ANALYSIS.md`](docs/PROJECT_ANALYSIS.md) §7.1。
 
-### `main.js` 与 `index.js` 双轨策略（已决策）
+### 北极星与交付边界（单一摘要）
+
+与下文路线图互补：**目标**是维护可对接真实 LNS 的开源 LoRaWAN 模拟器（协议目标 LoRaWAN 1.0.3，ChirpStack v4，UDP 或 MQTT Gateway Bridge），服务联调测试、异常复现与教学。**三大支柱**：① `simulator/` 以 `index.js` 为生产主线（`anomaly_module.js` 为异常 SSOT，`sim-state.json` 为可观测契约）；② ChirpStack Docker、根目录脚本与 OpenClaw 插件（[`simulator/openclaw-lorawan-sim/`](simulator/openclaw-lorawan-sim/)）配套；③ 可选 UI（[`ui/`](ui/)）与控制面编排 API，**不依赖 UI 亦可完整运行**。新功能应落在 `index.js` 主线或可 `require` 的共享模块上；文档状态须与 README / 本文件 / [`docs/PROJECT_ANALYSIS.md`](docs/PROJECT_ANALYSIS.md) 同步。
+
+### `index.js` 单一主线（`main.js` 已合并）
 
 | 线路 | 角色 | 规则 |
 |------|------|------|
-| **`index.js`** | 生产与 ChirpStack 联调**唯一主线** | 新功能与 bugfix 优先在此，或通过被 `require` 的模块（如 [`simulator/anomaly_module.js`](simulator/anomaly_module.js)、[`simulator/signal_model.js`](simulator/signal_model.js)）扩展。 |
-| **`main.js`** | **实验室线（冻结为结构/运动/环境验证）** | 不承诺 MQTT 全路径、多网关与 `nodes[]` 输出一致；**不作为**对外发布默认入口。 |
-
-若未来要以 `main.js` **替代**主线，须按 [`docs/PROJECT_ANALYSIS.md`](docs/PROJECT_ANALYSIS.md) §7.1 逐项补齐缺口（含 MQTT 多网关、`recordVisualizerAfterUplink` 级状态导出、下行 parity），并改写本段与 README。
+| **`index.js`** | 生产与 ChirpStack 联调**唯一运行时** | 新功能与 bugfix 在此或通过被 `require` 的模块扩展（含 [`simulator/src/runtime/motion-environment.js`](simulator/src/runtime/motion-environment.js) 可选运动/环境/衍生异常）。 |
+| **`main.js`** | **兼容入口** | 弃用；启动时警告并加载 `index.js`，勿再依赖其旧有独立实现。 |
 
 ---
 
@@ -43,7 +46,7 @@
 | 文档 | ✅ 80% | README + 项目计划 + 配置示例 |
 | Agent 集成 | ✅ 100% | OpenClaw skill + 诊断工具 |
 
-**最后更新**: 2026-03-27 19:30
+**最后更新**: 2026-03-28
 **状态**: v1.0 候选版本（核心功能已完成，进入 GitHub 发布整理阶段）
 
 ---
@@ -140,7 +143,7 @@
 LoRaWAN-SIM/
 ├── simulator/
 │   ├── index.js                   # 核心代码（生产/ChirpStack 联调入口）
-│   ├── main.js                    # 实验室线入口（结构/运动/环境验证，不承诺对齐）
+│   ├── main.js                    # 弃用：转发 index.js
 │   ├── signal_model.js            # 简化路径损耗/RSSI 模型
 │   ├── physical_layer.js          # 高阶物理层模型
 │   ├── multi_gateway_advanced.js  # 多网关管理（切换、负载均衡）
@@ -154,18 +157,29 @@ LoRaWAN-SIM/
 │   ├── src/                        # 协议/物理/状态模块实现
 │   ├── openclaw-lorawan-sim/      # OpenClaw 插件（registerTool；Agent 集成主路径）
 │   ├── docs/                      # 文档（simulator 内部）
-│   ├── visualizer-ui/            # 前端可视化（可选）
+│   ├── visualizer-ui/             # 旧版/占位；当前主 Web 控制台见仓库根 ui/
 │   └── discord-bot/               # Discord Bot（可选；与插件并行）
 │       ├── index.js               # Bot 主程序
 │       ├── package.json
 │       └── README.md
+├── ui/                            # Web 控制台（React + TS + Vite + Tailwind）；需 index.js 开启 controlServer，对接控制面 HTTP API
+│   ├── README.md                  # 启动、环境变量、所调用的 API 说明
+│   ├── package.json               # 前端依赖与脚本
+│   ├── vite.config.ts             # 开发代理（默认指向控制服务器，如 127.0.0.1:9999）
+│   ├── eslint.config.js
+│   ├── .env.example               # VITE_CONTROL_PROXY_TARGET 等
+│   ├── index.html
+│   ├── public/                    # 静态资源
+│   └── src/                       # main.tsx / App.tsx；api/client.ts；components/*；lib/*；types/simState.ts
 ├── configs/
 │   └── README.md                  # 根目录配置说明
-├── docs/
-│   ├── PROJECT_ANALYSIS.md        # 全项目架构与深化分析（sim-state/异常/main 差集）
-│   ├── OPENCLAW_QUICKSTART.md     # OpenClaw 插件路径与最短对接
-│   ├── DETECTION_RULES.md         # 异常检测/规则文档
-│   ├── ANOMALY_RESPONSE.md        # 异常响应对照表
+├── docs/                          # 文档索引见 docs/README.md（UI 契约、联调 Runbook、异常与配置速查等）
+│   ├── README.md
+│   ├── PROJECT_ANALYSIS.md
+│   ├── CONFIG_MAP.md
+│   ├── OPENCLAW_QUICKSTART.md
+│   ├── ANOMALY_RESPONSE.md
+│   ├── DETECTION_RULES.md
 │   └── openclaw.plugins.entries.example.json
 ├── schemas/
 │   ├── sim-state-v1.schema.json
@@ -176,6 +190,8 @@ LoRaWAN-SIM/
 ├── AGENTS.md / SOUL.md / USER.md  # OpenClaw 配置
 └── TOOLS.md                       # 环境配置
 ```
+
+Web 控制台详细说明见 [ui/README.md](ui/README.md)（需 `controlServer.enabled`、orchestrator 相关能力时见该文档）。
 
 ## Agent 集成
 

@@ -24,8 +24,15 @@ const {
   calculateRealisticSignal
 } = require('./signal_model');
 const { resolveLorawanAdrEnabled, linkAdrChannelMaskAck, linkAdrAppliedChannelMask } = require('./src/utils');
-const { readConfig } = require('./src/config/v20-normalize');
+const { readConfig, deepMerge } = require('./src/config/v20-normalize');
 const { parseCliConfigArgs, applyCliConfigOverrides, HELP_CONFIG_TEXT } = require('./src/config/cli-overrides');
+const { OrchestratorService } = require('./src/orchestrator/service');
+const { IdempotencyStore } = require('./src/orchestrator/idempotency');
+const {
+  buildMotionEnvironmentRuntime,
+  registerMovementFromConfig,
+  applyMotionEnvironmentBeforeSignal,
+} = require('./src/runtime/motion-environment');
 let mqttLib = null;
 let mqttClient = null;
 let protobuf = null;
@@ -37,6 +44,63 @@ const PROTOCOL_VERSION = 2;
 const FCNT_STATE_FILE = path.join(__dirname, 'fcnt_state.json');
 let globalFCntState = {};
 const globalDeviceMap = {};
+
+/** Strip NS→device ACK in downlink FCtrl when `confirmed-noack` anomaly is active (device keeps retrying). */
+function stripLnsAckForConfirmedNoAck(phyPayload) {
+  if (!phyPayload || phyPayload.length < 12) return phyPayload;
+  const mType = (phyPayload[0] >> 5) & 0x07;
+  if (mType !== 0x03 && mType !== 0x05) return phyPayload;
+  const devAddrHex = phyPayload.slice(1, 5).reverse().toString('hex');
+  const device = globalDeviceMap[devAddrHex];
+  if (!device || !device._skipNextAck) return phyPayload;
+  const out = Buffer.from(phyPayload);
+  out[5] = out[5] & ~(1 << 5);
+  delete device._skipNextAck;
+  console.log(`[ANOMALY] confirmed-noack: stripped LNS ACK bit for ${device.name || devAddrHex}`);
+  return out;
+}
+
+/** Corrupt downlink PHY before MAC parse when `downlink-corrupt` anomaly is active. */
+function corruptDownlinkPhyForAnomaly(phyPayload) {
+  if (!phyPayload || phyPayload.length < 12) return phyPayload;
+  const mType = (phyPayload[0] >> 5) & 0x07;
+  if (mType !== 0x03 && mType !== 0x05) return phyPayload;
+  const devAddrHex = phyPayload.slice(1, 5).reverse().toString('hex');
+  const device = globalDeviceMap[devAddrHex];
+  if (!device || !device._corruptDownlink) return phyPayload;
+  const p = device._downlinkCorruptParams || { bitFlip: 4, target: 'mic' };
+  const out = Buffer.from(phyPayload);
+  const flips = Math.max(1, Number(p.bitFlip) || 4);
+  const target = p.target || 'mic';
+  if (target === 'mic' || target === 'both') {
+    const micStart = out.length - 4;
+    for (let i = 0; i < flips; i++) {
+      const byteIdx = micStart + (i % 4);
+      out[byteIdx] ^= 1 << (i % 8);
+    }
+  }
+  if (target === 'payload' || target === 'both') {
+    const foptsLen = out[5] & 0x0f;
+    const payloadStart = 8 + foptsLen + 1;
+    const maxIdx = out.length - 5;
+    for (let i = 0; i < flips && payloadStart < maxIdx; i++) {
+      const span = Math.max(1, maxIdx - payloadStart);
+      const byteIdx = payloadStart + (i % span);
+      out[byteIdx] ^= 1 << ((i + 2) % 8);
+    }
+  }
+  delete device._corruptDownlink;
+  delete device._downlinkCorruptParams;
+  console.log(`[ANOMALY] downlink-corrupt applied for ${device.name || devAddrHex} target=${target}`);
+  return out;
+}
+
+function applyDownlinkPhyAnomalies(phyPayload) {
+  let p = phyPayload;
+  p = stripLnsAckForConfirmedNoAck(p);
+  p = corruptDownlinkPhyForAnomaly(p);
+  return p;
+}
 // OTAA: devices that sent Join Request, waiting for Join Accept (devNonce, appKeyBuf, otaaDeviceRef)
 let pendingOtaaDevices = [];
 
@@ -67,7 +131,15 @@ let simState = {
 function pushSimPacketLog(entry) {
   if (!simState.packetLog) simState.packetLog = [];
   simState.packetLog.push(entry);
-  if (simState.packetLog.length > 50) simState.packetLog.shift();
+  if (simState.packetLog.length > 500) simState.packetLog.shift();
+}
+
+function dataRateToSf(dr) {
+  const n = Number(dr);
+  if (!Number.isFinite(n)) return undefined;
+  const drToSf = [12, 11, 10, 9, 8, 7];
+  if (n >= 0 && n < drToSf.length) return drToSf[n];
+  return undefined;
 }
 
 function updateSimState(updates) {
@@ -1146,7 +1218,7 @@ function createMqttHandlers(mqttMarshaler, mqttTopicPrefix, gatewayEuiBuf, gwPro
         }
 
         if (phyPayload.length >= 12 && (mType === 0x03 || mType === 0x05)) {
-          const dlResult = applyDataDownlinkMacAndQueue(phyPayload, macDl);
+          const dlResult = applyDataDownlinkMacAndQueue(applyDownlinkPhyAnomalies(phyPayload), macDl);
           if (dlResult) {
             devAddr = dlResult.devAddr;
             const mTypeName = dlResult.isConfirmed ? 'Confirmed' : 'Unconfirmed';
@@ -1207,6 +1279,9 @@ function createMqttHandlers(mqttMarshaler, mqttTopicPrefix, gatewayEuiBuf, gwPro
 }
 
 async function main() {
+  let orchestrator = null;
+  let topologyMqttStop = () => {};
+  let topologyInventoryTimer = null;
   let cliArgs;
   try {
     cliArgs = parseCliConfigArgs(process.argv);
@@ -1219,8 +1294,160 @@ async function main() {
     process.exit(0);
   }
 
+  const configFilePath = path.isAbsolute(cliArgs.config)
+    ? path.resolve(cliArgs.config)
+    : path.resolve(process.cwd(), cliArgs.config);
+  const configDirForProfiles = path.dirname(configFilePath);
+  // Main file under simulator/configs/*.json: use sibling profiles/ (avoid configs/configs/profiles).
+  const defaultProfilesDir =
+    path.basename(configDirForProfiles) === 'configs'
+      ? path.resolve(configDirForProfiles, 'profiles')
+      : path.resolve(configDirForProfiles, 'configs', 'profiles');
+
+  const safeJsonClone = (obj) => JSON.parse(JSON.stringify(obj ?? null));
+  const normalizeProfileName = (name) => String(name || '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
+  const ensureProfilesDir = (absDir) => {
+    if (!fs.existsSync(absDir)) fs.mkdirSync(absDir, { recursive: true });
+  };
+  const resolveProfilesDir = (cfg) => {
+    const configured = cfg?.profileConfig?.profilesDir;
+    if (!configured) return defaultProfilesDir;
+    const p = String(configured).trim();
+    if (!p) return defaultProfilesDir;
+    let resolved = path.isAbsolute(p) ? path.normalize(p) : path.resolve(path.dirname(configFilePath), p);
+    // Main file under .../configs/*.json + profilesDir "configs/profiles" resolves to
+    // .../configs/configs/profiles (wrong). Map to sibling .../configs/profiles.
+    if (path.basename(configDirForProfiles) === 'configs') {
+      const wrongNested = path.resolve(configDirForProfiles, 'configs', 'profiles');
+      if (resolved === wrongNested) {
+        resolved = path.resolve(configDirForProfiles, 'profiles');
+      }
+    }
+    return resolved;
+  };
+  const listProfileNames = (cfg) => {
+    const dir = resolveProfilesDir(cfg);
+    if (!fs.existsSync(dir)) return [];
+    try {
+      return fs
+        .readdirSync(dir, { withFileTypes: true })
+        .filter((ent) => ent.isFile() && ent.name.endsWith('.json'))
+        .map((ent) => ent.name.replace(/\.json$/i, ''))
+        .sort((a, b) => a.localeCompare(b));
+    } catch {
+      return [];
+    }
+  };
+  const profileFilePath = (cfg, profileName) => {
+    const n = normalizeProfileName(profileName);
+    if (!n) throw new Error('invalid profile name');
+    return path.join(resolveProfilesDir(cfg), `${n}.json`);
+  };
+  const applyProfileSnapshot = (baseCfg, snapshot) => {
+    const patch = {};
+    const keys = [
+      'devices',
+      'multiGateway',
+      'signalModel',
+      'uplink',
+      'simulation',
+      'lorawan',
+      'chirpstack',
+      'gatewayEui',
+      'lnsHost',
+      'lnsPort',
+      'udpBindPort',
+      'mqtt',
+      'controlServer',
+      'control',
+    ];
+    for (const key of keys) {
+      if (snapshot && Object.prototype.hasOwnProperty.call(snapshot, key)) patch[key] = snapshot[key];
+    }
+    return deepMerge(baseCfg, patch);
+  };
+
   let config = readConfig(cliArgs.config);
   config = applyCliConfigOverrides(config, cliArgs.entries);
+  if (!config.chirpstack || typeof config.chirpstack !== 'object') config.chirpstack = {};
+  if (config.chirpstack.baseUrl == null) config.chirpstack.baseUrl = 'http://10.0.0.3:8090';
+  if (!config.chirpstack.authHeader) config.chirpstack.authHeader = 'Grpc-Metadata-Authorization';
+  if (config.chirpstack.applicationId == null) config.chirpstack.applicationId = '540a999c-9eeb-4c5c-bed1-778dacddaf46';
+  if (config.chirpstack.deviceProfileId == null) config.chirpstack.deviceProfileId = 'a1b2c3d4-1111-2222-3333-444444444444';
+  if (config.chirpstack.tenantId == null) config.chirpstack.tenantId = '81d48efb-6216-4c7f-8c21-46a5eac9d737';
+  if (config.chirpstack.topologyEnabled == null) config.chirpstack.topologyEnabled = false;
+  if (config.chirpstack.inventoryPollSec == null) config.chirpstack.inventoryPollSec = 60;
+  if (config.chirpstack.rxStalenessSec == null) config.chirpstack.rxStalenessSec = 120;
+  if (!config.profileConfig || typeof config.profileConfig !== 'object') config.profileConfig = {};
+  if (!config.profileConfig.profilesDir) {
+    config.profileConfig.profilesDir = path.relative(path.dirname(configFilePath), defaultProfilesDir).replace(/\\/g, '/');
+  }
+  ensureProfilesDir(resolveProfilesDir(config));
+  const defaultProfileName = normalizeProfileName(config.profileConfig.defaultProfile || '');
+  if (defaultProfileName) {
+    try {
+      const abs = profileFilePath(config, defaultProfileName);
+      if (fs.existsSync(abs)) {
+        const raw = JSON.parse(fs.readFileSync(abs, 'utf8'));
+        config = applyProfileSnapshot(config, raw);
+        config.profileConfig.activeProfile = defaultProfileName;
+        console.log(`[Profile] loaded default profile "${defaultProfileName}"`);
+      } else {
+        console.log(`[Profile] default profile not found: "${defaultProfileName}" (${abs})`);
+      }
+    } catch (e) {
+      console.log(`[Profile] failed to load default profile "${defaultProfileName}": ${e.message}`);
+    }
+  }
+
+  function persistConfig(nextConfig) {
+    fs.writeFileSync(configFilePath, JSON.stringify(nextConfig, null, 2) + '\n', 'utf8');
+  }
+  function profileStateForUi() {
+    const names = listProfileNames(config);
+    const active = normalizeProfileName(config?.profileConfig?.activeProfile || '');
+    const defaults = normalizeProfileName(config?.profileConfig?.defaultProfile || '');
+    let profilesDirResolved = '';
+    try {
+      profilesDirResolved = resolveProfilesDir(config);
+    } catch {
+      profilesDirResolved = '';
+    }
+    const relConfigured = config?.profileConfig?.profilesDir;
+    return {
+      activeProfile: active || '',
+      defaultProfile: defaults || '',
+      availableProfiles: names,
+      profilesDir: typeof relConfigured === 'string' ? relConfigured : '',
+      profilesDirResolved,
+    };
+  }
+  function profileNameExists(cfg, profileName) {
+    const n = normalizeProfileName(profileName);
+    if (!n) return false;
+    const abs = profileFilePath(cfg, n);
+    return fs.existsSync(abs);
+  }
+  function generateUniqueBlankProfileName() {
+    const base = normalizeProfileName(`blank-${Date.now()}`);
+    let name = base || 'blank';
+    let n = 0;
+    while (profileNameExists(config, name)) {
+      n += 1;
+      name = normalizeProfileName(`${base || 'blank'}-${n}`);
+    }
+    return name;
+  }
+  function replaceObjectContents(target, source) {
+    const src = source && typeof source === 'object' ? source : {};
+    for (const k of Object.keys(target || {})) delete target[k];
+    Object.assign(target, src);
+  }
+  function setActiveDefaultProfile(profileName, setDefault) {
+    if (!config.profileConfig || typeof config.profileConfig !== 'object') config.profileConfig = {};
+    config.profileConfig.activeProfile = profileName;
+    if (setDefault === true) config.profileConfig.defaultProfile = profileName;
+  }
 
   const gatewayEuiBuf = euiStringToBuffer(config.gatewayEui || '0102030405060708');
   const lnsHost = config.lnsHost || '127.0.0.1';
@@ -1257,6 +1484,8 @@ async function main() {
    * Merge node into sim-state for visualizer (HTTP / sim-state.json).
    * @param {object} options
    * @param {boolean} [options.countTx=true] If false (e.g. OTAA Join Request), refresh node on map without incrementing global uplink stats.
+   * @param {Array<{ gatewayEui?: string, eui?: string, rssi?: number, snr?: number, distance?: number, pathLoss?: number }>} [options.gatewayReceptions]
+   * @param {number} [options.sf]
    */
   function recordVisualizerAfterUplink(lorawanDevice, label, rssi, snr, options = {}) {
     if (!lorawanDevice || !lorawanDevice.devEui) return;
@@ -1276,13 +1505,32 @@ async function main() {
       simState.stats.uplinks = uplinkCount;
     }
     const fCntDisplay = lorawanDevice.joined ? Math.max(0, (lorawanDevice.fCntUp || 0) - 1) : 0;
+    const sfDisplay = Number.isFinite(Number(options.sf))
+      ? Number(options.sf)
+      : (dataRateToSf(lorawanDevice?.macParams?.dataRate) || dataRateToSf(lorawanDevice?.nodeState?.dataRate));
     const rssiVal = rssi !== undefined && rssi !== null ? Number(rssi) : (lorawanDevice.nodeState?.rssi ?? existingNode?.rssi ?? -80);
     const snrVal = snr !== undefined && snr !== null ? Number(snr) : (lorawanDevice.nodeState?.snr ?? existingNode?.snr ?? 5);
     const uplinksDisplay = countTx
       ? (lorawanDevice._vizUplinkCount || 0)
       : (existingNode && existingNode.uplinks !== undefined ? existingNode.uplinks : (lorawanDevice._vizUplinkCount || 0));
+    const gatewayReceptions = Array.isArray(options.gatewayReceptions)
+      ? options.gatewayReceptions
+          .map((rx) => {
+            const gatewayEui = String(rx.gatewayEui || rx.eui || '').toLowerCase();
+            if (!/^[0-9a-f]{16}$/.test(gatewayEui)) return null;
+            return {
+              gatewayEui,
+              rssi: Number.isFinite(Number(rx.rssi)) ? Number(rx.rssi) : undefined,
+              snr: Number.isFinite(Number(rx.snr)) ? Number(rx.snr) : undefined,
+              distance: Number.isFinite(Number(rx.distance)) ? Number(rx.distance) : undefined,
+              pathLoss: Number.isFinite(Number(rx.pathLoss)) ? Number(rx.pathLoss) : undefined
+            };
+          })
+          .filter(Boolean)
+      : (Array.isArray(existingNode?.gatewayReceptions) ? existingNode.gatewayReceptions : undefined);
     const newNode = {
       eui: devEuiUp,
+      enabled: existingNode?.enabled,
       name: displayName,
       devAddr,
       fCnt: fCntDisplay,
@@ -1292,22 +1540,47 @@ async function main() {
       uplinks: uplinksDisplay,
       position: lorawanDevice.position,
       anomaly: lorawanDevice.anomaly,
+      nodeState: existingNode?.nodeState,
+      adrReject: existingNode?.adrReject,
+      devStatus: existingNode?.devStatus,
+      duplicateFirstData: existingNode?.duplicateFirstData,
       lastSeen: nowIso,
-      lastPayload: payloadPreview || existingNode?.lastPayload
+      lastPayload: payloadPreview || existingNode?.lastPayload,
+      gatewayReceptions,
+      simulator: existingNode?.simulator
     };
     const idx = simState.nodes.findIndex(n => n.eui === devEuiUp);
     if (idx >= 0) simState.nodes[idx] = newNode;
     else simState.nodes.push(newNode);
     if (payloadPreview) {
-      pushSimPacketLog({
-        nodeId: devEuiUp,
-        time: nowIso,
-        type: countTx ? 'data' : 'join',
-        rssi: rssiVal,
-        snr: snrVal,
-        payload: payloadPreview,
-        status: 'ok'
-      });
+      if (Array.isArray(gatewayReceptions) && gatewayReceptions.length > 0) {
+        gatewayReceptions.forEach((rx) => {
+          pushSimPacketLog({
+            nodeId: devEuiUp,
+            gatewayEui: rx.gatewayEui,
+            time: nowIso,
+            type: countTx ? 'data' : 'join',
+            fCnt: fCntDisplay,
+            sf: sfDisplay,
+            rssi: rx.rssi != null ? Number(rx.rssi) : rssiVal,
+            snr: rx.snr != null ? Number(rx.snr) : snrVal,
+            payload: payloadPreview,
+            status: 'ok'
+          });
+        });
+      } else {
+        pushSimPacketLog({
+          nodeId: devEuiUp,
+          time: nowIso,
+          type: countTx ? 'data' : 'join',
+          fCnt: fCntDisplay,
+          sf: sfDisplay,
+          rssi: rssiVal,
+          snr: snrVal,
+          payload: payloadPreview,
+          status: 'ok'
+        });
+      }
     }
     if (lorawanDevice.nodeState) {
       if (rssiVal !== undefined && rssiVal !== null) {
@@ -1351,6 +1624,9 @@ async function main() {
       let devEui = extractDevEuiFromTopic(topic);
       if (!devEui) return;
       devEui = devEui.toUpperCase();
+      if (orchestrator && topic.includes('/event/up') && Array.isArray(event.rxInfo)) {
+        orchestrator.recordUplinkRxInfo(devEui, event.rxInfo);
+      }
       const fCnt = event.fCnt;
 
       if (fCnt !== null && fCnt !== undefined) {
@@ -1626,7 +1902,7 @@ console.log('[DEBUG] Using appKeyBuf:', pending.appKeyBuf.toString('hex'));
                   }
                 }
               } else if (mType === 0x03 || mType === 0x05) {
-                const udpDl = applyDataDownlinkMacAndQueue(phyPayload, macDl);
+                const udpDl = applyDataDownlinkMacAndQueue(applyDownlinkPhyAnomalies(phyPayload), macDl);
                 if (udpDl && udpDl.macCommands.length > 0) {
                   const tsu = new Date().toLocaleTimeString('zh-CN', { hour12: false });
                   console.log(
@@ -1770,6 +2046,7 @@ console.log('[DEBUG] Using appKeyBuf:', pending.appKeyBuf.toString('hex'));
   }
 
   const uplinkTimers = [];
+  let motionEnvRuntime = null;
 
   function mergeUplinkCfg(base, override) {
     const merged = { ...(base || {}), ...(override || {}) };
@@ -1824,7 +2101,15 @@ console.log('[DEBUG] Using appKeyBuf:', pending.appKeyBuf.toString('hex'));
       const bytes = customBytes !== null ? customBytes : generateSimplePayload(devEui, payloadLength);
 
       if (lorawanDevice && lorawanDevice.isOtaa && !lorawanDevice.joined) {
-        const devNonce = Math.floor(Math.random() * 65536); lorawanDevice.devNonce = devNonce;
+        let devNonce = Math.floor(Math.random() * 65536);
+        if (
+          lorawanDevice._forceDevNonce != null &&
+          Number.isFinite(Number(lorawanDevice._forceDevNonce))
+        ) {
+          devNonce = Number(lorawanDevice._forceDevNonce) & 0xffff;
+          console.log(`[ANOMALY] devnonce-repeat: DevNonce=${devNonce}`);
+        }
+        lorawanDevice.devNonce = devNonce;
         const phy = buildJoinRequest(lorawanDevice.appEui, lorawanDevice.devEui, devNonce, lorawanDevice.nwkKeyBuf || lorawanDevice.appKeyBuf);
 console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKeyBuf.toString('hex') : 'null', 'appKeyBuf:', lorawanDevice.appKeyBuf ? lorawanDevice.appKeyBuf.toString('hex') : 'null');
         base64Payload = phy.toString('base64');
@@ -1953,24 +2238,39 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
         console.log(`[DEBUG] -> SF${sf}`);
       }
 
+      let motionAdj = null;
+      if (motionEnvRuntime && lorawanDevice) {
+        motionAdj = applyMotionEnvironmentBeforeSignal(motionEnvRuntime, lorawanDevice, config);
+      }
+
       // ====== 真实信号模型集成 ======
       let rssi, lsnr, rssiStd;
-      
-      // 尝试使用真实信号模型
-      if (
+      /** When anomaly injects signalOverride (e.g. signal-weak), multi-GW paths must not replace RSSI/SNR with per-gateway geometry (would look “strong” again). */
+      let anomalyRfOverrideActive = false;
+
+      const useRealisticSignalModel =
         config.signalModel &&
         config.signalModel.enabled &&
         lorawanDevice &&
-        !(config.multiGateway && config.multiGateway.enabled)
-      ) {
+        !(config.multiGateway && config.multiGateway.enabled);
+
+      // 尝试使用真实信号模型
+      if (useRealisticSignalModel) {
         const deviceIndex = lorawanDevice._deviceIndex || 0;
         const totalDevices = lorawanDevice._totalDevices || 1;
         const devicePosition = lorawanDevice && lorawanDevice.position;
+        const cfgForSignal =
+          motionAdj && motionAdj.signalModelEnvironment
+            ? {
+                ...config,
+                signalModel: { ...config.signalModel, environment: motionAdj.signalModelEnvironment },
+              }
+            : config;
         const signalResult = calculateRealisticSignal(
           deviceIndex,
           totalDevices,
           { frequency: chosenFreq * 1000000 },
-          config,
+          cfgForSignal,
           Date.now(),
           devicePosition
         );
@@ -2004,6 +2304,9 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
           ns.lastSnr = lsnr;
         }
       }
+      if (motionAdj && motionAdj.envRssiAdjust && !useRealisticSignalModel) {
+        rssi = clamp((rssi ?? -80) + motionAdj.envRssiAdjust, -140, 10);
+      }
       // ====== 信号模型集成结束 ======
 
 
@@ -2017,8 +2320,9 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
       // ====== 异常注入检查 ======
       if (lorawanDevice && lorawanDevice.anomaly && lorawanDevice.anomaly.enabled) {
         const anomalyResult = injectAnomaly(lorawanDevice, base64Payload, lorawanDevice.fCntUp, sentCount);
-        if (anomalyResult.modified) {
-          phy = anomalyResult.payload;
+        if (anomalyResult.modified && anomalyResult.payload) {
+          const mod = anomalyResult.payload;
+          base64Payload = Buffer.isBuffer(mod) ? mod.toString('base64') : Buffer.from(mod).toString('base64');
           console.log(`[ANOMALY] ${lorawanDevice.anomaly.scenario} triggered for ${lorawanDevice.name || lorawanDevice.devEui.toString('hex')}`);
         }
         if (anomalyResult.dropUplink) {
@@ -2048,12 +2352,27 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
           }
           rssi = clamp(rssi ?? -80, -140, 10);
           lsnr = Math.max(-25, Math.min(15, lsnr ?? 5));
+          anomalyRfOverrideActive = true;
           console.log(
             `[ANOMALY] RF metadata override RSSI=${rssi} SNR=${lsnr} freqMHz=${chosenFreq} SF=${sf}`
           );
         }
       }
       // ====== 异常注入结束 ======
+
+      if (
+        lorawanDevice &&
+        lorawanDevice._gatewayOffline &&
+        lorawanDevice._gatewayOfflineUntil != null &&
+        Date.now() < lorawanDevice._gatewayOfflineUntil
+      ) {
+        console.log(
+          `[ANOMALY] gateway-offline: suppressing uplink for ${lorawanDevice.name || lorawanDevice.devEui.toString('hex')}`
+        );
+        sentCount += 1;
+        scheduleNextSend();
+        return;
+      }
 
       const rxpk = buildRxpk({
         freq: chosenFreq,
@@ -2095,13 +2414,15 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
             const isJoinPending = lorawanDevice && lorawanDevice.isOtaa && !lorawanDevice.joined;
             selected.forEach(gw => {
               const gwEuiBuf = euiStringToBuffer(gw.eui);
-              const rxpkWithSignal = { ...rxpk, rssi: Math.round(gw.rssi), lsnr: gw.snr };
+              const effRssi = anomalyRfOverrideActive ? Math.round(rssi) : Math.round(gw.rssi);
+              const effSnr = anomalyRfOverrideActive ? lsnr : gw.snr;
+              const rxpkWithSignal = { ...rxpk, rssi: effRssi, lsnr: effSnr };
               const pkt = createPushDataPacket(gwEuiBuf, [rxpkWithSignal]);
               socket.send(pkt, 0, pkt.length, lnsPort, lnsHost, (err) => {
                 if (err) console.error(`[✗] UDP MGW ${gw.eui} failed:`, err.message);
                 else {
-                  console.log(`[Multi-GW UDP] Sent to ${gw.eui}: RSSI=${gw.rssi}`);
-                  okSignals.push({ rssi: gw.rssi, snr: gw.snr });
+                  console.log(`[Multi-GW UDP] Sent to ${gw.eui}: RSSI=${effRssi}`);
+                  okSignals.push({ rssi: effRssi, snr: effSnr });
                 }
                 pendingUdp--;
                 if (pendingUdp === 0 && okSignals.length > 0) {
@@ -2109,7 +2430,15 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
                   if (lorawanDevice) {
                     recordVisualizerAfterUplink(lorawanDevice, label, best.rssi, best.snr, {
                       countTx: !isJoinPending,
-                      payloadPreview: vizPayloadPreview(isJoinPending, base64Payload, bytes)
+                      sf,
+                      payloadPreview: vizPayloadPreview(isJoinPending, base64Payload, bytes),
+                      gatewayReceptions: selected.map((g) => ({
+                        gatewayEui: g.eui,
+                        rssi: g.rssi,
+                        snr: g.snr,
+                        distance: g.distance,
+                        pathLoss: g.pathLoss
+                      }))
                     });
                   }
                 }
@@ -2128,7 +2457,13 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
               console.log('=> PUSH_DATA', label ? `[${label}]` : '', 'size', rxpk.size);
               recordVisualizerAfterUplink(lorawanDevice, label, rssi, lsnr, {
                 countTx: !isJoinPending,
-                payloadPreview: vizPayloadPreview(isJoinPending, base64Payload, bytes)
+                sf,
+                payloadPreview: vizPayloadPreview(isJoinPending, base64Payload, bytes),
+                gatewayReceptions: [{
+                  gatewayEui: gatewayEuiBuf.toString('hex'),
+                  rssi,
+                  snr: lsnr
+                }]
               });
             }
           });
@@ -2223,20 +2558,30 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
           const isJoinPendingMgw = lorawanDevice && lorawanDevice.isOtaa && !lorawanDevice.joined;
           selected.forEach(gw => {
             const gwTopic = `${mqttTopicPrefix}/gateway/${gw.eui}/event/up`;
-            const rxpkWithSignal = { ...rxpk, rssi: Math.round(gw.rssi), loRaSNR: gw.snr };
+            const effRssiMg = anomalyRfOverrideActive ? Math.round(rssi) : Math.round(gw.rssi);
+            const effSnrMg = anomalyRfOverrideActive ? lsnr : gw.snr;
+            const rxpkWithSignal = { ...rxpk, rssi: effRssiMg, lsnr: effSnrMg, loRaSNR: effSnrMg };
             const gwPayload = encodeUplinkPayload(rxpkWithSignal, mqttMarshaler, gwProto);
             mqttClient.publish(gwTopic, gwPayload, { qos: mqttCfg.qos || 0 }, (err) => {
               if (err) console.error(`[✗] MGW ${gw.eui} failed:`, err.message);
               else {
-                console.log(`[Multi-GW] Sent to ${gw.eui}: RSSI=${gw.rssi}`);
-                okSignalsMgw.push({ rssi: gw.rssi, snr: gw.snr });
+                console.log(`[Multi-GW] Sent to ${gw.eui}: RSSI=${effRssiMg}`);
+                okSignalsMgw.push({ rssi: effRssiMg, snr: effSnrMg });
               }
               pendingMgw--;
               if (pendingMgw === 0 && okSignalsMgw.length > 0) {
                 const best = okSignalsMgw.reduce((a, b) => (a.rssi >= b.rssi ? a : b));
                 recordVisualizerAfterUplink(lorawanDevice, label, best.rssi, best.snr, {
                   countTx: !isJoinPendingMgw,
-                  payloadPreview: vizPayloadPreview(isJoinPendingMgw, base64Payload, bytes)
+                  sf,
+                  payloadPreview: vizPayloadPreview(isJoinPendingMgw, base64Payload, bytes),
+                  gatewayReceptions: selected.map((g) => ({
+                    gatewayEui: g.eui,
+                    rssi: g.rssi,
+                    snr: g.snr,
+                    distance: g.distance,
+                    pathLoss: g.pathLoss
+                  }))
                 });
                 if (lorawanDevice && mqttEnabled && !isJoinPendingMgw) {
                   const devAddr = lorawanDevice.devAddr ? lorawanDevice.devAddr.toString('hex').toUpperCase() : 'N/A';
@@ -2269,25 +2614,36 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
           const isJoinPendingMgw2 = lorawanDevice && lorawanDevice.isOtaa && !lorawanDevice.joined;
           mgwResult.forEach(gw => {
             const gwTopic = `${mqttTopicPrefix}/gateway/${gw.eui}/event/up`;
+            const effRssi2 = anomalyRfOverrideActive ? Math.round(rssi) : Math.round(gw.rssi);
+            const effSnr2 = anomalyRfOverrideActive ? lsnr : gw.snr;
             const rxpkWithSignal = {
               ...rxpk,
-              rssi: Math.round(gw.rssi),
-              loRaSNR: gw.snr
+              rssi: effRssi2,
+              lsnr: effSnr2,
+              loRaSNR: effSnr2
             };
             const gwPayload = encodeUplinkPayload(rxpkWithSignal, mqttMarshaler, gwProto);
             
             mqttClient.publish(gwTopic, gwPayload, { qos: mqttCfg.qos || 0 }, (err) => {
               if (err) console.error(`[✗] MGW publish to ${gw.eui} failed:`, err.message);
               else {
-                console.log(`[Multi-GW] Sent to ${gw.name || gw.eui}: RSSI=${gw.rssi}, SNR=${gw.snr}`);
-                okSignalsMgw2.push({ rssi: gw.rssi, snr: gw.snr });
+                console.log(`[Multi-GW] Sent to ${gw.name || gw.eui}: RSSI=${effRssi2}, SNR=${effSnr2}`);
+                okSignalsMgw2.push({ rssi: effRssi2, snr: effSnr2 });
               }
               pendingMgw2--;
               if (pendingMgw2 === 0 && okSignalsMgw2.length > 0) {
                 const best = okSignalsMgw2.reduce((a, b) => (a.rssi >= b.rssi ? a : b));
                 recordVisualizerAfterUplink(lorawanDevice, label, best.rssi, best.snr, {
                   countTx: !isJoinPendingMgw2,
-                  payloadPreview: vizPayloadPreview(isJoinPendingMgw2, base64Payload, bytes)
+                  sf,
+                  payloadPreview: vizPayloadPreview(isJoinPendingMgw2, base64Payload, bytes),
+                  gatewayReceptions: mgwResult.map((g) => ({
+                    gatewayEui: g.eui,
+                    rssi: g.rssi,
+                    snr: g.snr,
+                    distance: g.distance,
+                    pathLoss: g.pathLoss
+                  }))
                 });
                 if (lorawanDevice && mqttEnabled && !isJoinPendingMgw2) {
                   const devAddr = lorawanDevice.devAddr ? lorawanDevice.devAddr.toString('hex').toUpperCase() : 'N/A';
@@ -2317,7 +2673,13 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
             const isJoinPending = lorawanDevice && lorawanDevice.isOtaa && !lorawanDevice.joined;
             recordVisualizerAfterUplink(lorawanDevice, label, rssi, lsnr, {
               countTx: !isJoinPending,
-              payloadPreview: vizPayloadPreview(isJoinPending, base64Payload, bytes)
+              sf,
+              payloadPreview: vizPayloadPreview(isJoinPending, base64Payload, bytes),
+              gatewayReceptions: [{
+                gatewayEui: gatewayEuiBuf.toString('hex'),
+                rssi,
+                snr: lsnr
+              }]
             });
             if (lorawanDevice && mqttEnabled && !isJoinPending) {
               const devAddr = lorawanDevice.devAddr ? lorawanDevice.devAddr.toString('hex').toUpperCase() : 'N/A';
@@ -2409,6 +2771,7 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
       const lines = csvContent.split('\n').filter(l => l.trim().length > 0);
       const maxDevices = deviceCount > 0 ? deviceCount : lines.length - 1;
       const seenDevices = new Set();
+      const seenDevEuiHex = new Set();
       const regionChannels = (REGIONS['AS923-1'] && REGIONS['AS923-1'].channels) || [];
       const macParamsDefault = { maxEIRP: 16, uplinkDwellTime: 400, downlinkDwellTime: 400, rx1DROffset: 0, rx2DataRate: 2, rx2Frequency: 923200000, dataRate: 0, txPower: 0, channelMask: 0xFFFF, nbTrans: 1, channels: [923.2, 923.4, 923.6, 923.8, 924.0, 924.2, 924.4, 924.6] };
 
@@ -2425,6 +2788,8 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
           if (!appEuiStr || !devEuiStr || !appKeyStr) continue;
           const appEui = hexToBufLen(appEuiStr, 8);
           const devEui = hexToBufLen(devEuiStr, 8);
+          const devEuiHex = devEui.toString('hex').toLowerCase();
+          if (seenDevEuiHex.has(devEuiHex)) continue;
           const appKeyBuf = hexToBufLen(appKeyStr, 16);
           const otaaDevice = {
             isOtaa: true,
@@ -2441,6 +2806,7 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
           initNodeState(autoDevices.length, otaaDevice, lorawanCfg, globalUplink, regionChannels);
           otaaDevice._vizLabel = deviceName;
           seenDevices.add(deviceName);
+          seenDevEuiHex.add(devEuiHex);
           autoDevices.push({ name: deviceName, lorawanDevice: otaaDevice, uplink: mergeUplinkCfg(globalUplink, lorawanCfg.uplink || {}) });
           continue;
         }
@@ -2472,9 +2838,70 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
           autoDevices.push({ name: deviceName, lorawanDevice, uplink: mergeUplinkCfg(globalUplink, lorawanCfg.uplink || {}) });
         }
       }
+      // CSV mode also merges config.devices OTAA entries (dedupe by DevEUI),
+      // so nodes created via UI can send uplinks after process restart.
+      if (Array.isArray(config.devices) && config.devices.length > 0) {
+        for (let i = 0; i < config.devices.length; i++) {
+          const d = config.devices[i];
+          if (!d || d.enabled === false) continue;
+          const act = (d.lorawan && d.lorawan.activation) || d.activation || 'OTAA';
+          if (act !== 'OTAA') continue;
+          const devEuiStr = d?.lorawan?.devEui ? String(d.lorawan.devEui).trim() : '';
+          const appEuiStr = d?.lorawan?.appEui ? String(d.lorawan.appEui).trim() : '';
+          const appKeyStr = d?.lorawan?.appKey ? String(d.lorawan.appKey).trim() : '';
+          if (!/^[a-fA-F0-9]{16}$/.test(devEuiStr) || !/^[a-fA-F0-9]{16}$/.test(appEuiStr) || !/^[a-fA-F0-9]{32}$/.test(appKeyStr)) {
+            continue;
+          }
+          const devEuiHex = devEuiStr.toLowerCase();
+          if (seenDevEuiHex.has(devEuiHex)) continue;
+          const appEui = hexToBufLen(appEuiStr, 8);
+          const devEui = hexToBufLen(devEuiStr, 8);
+          const appKeyBuf = hexToBufLen(appKeyStr, 16);
+          const nwkKeyStr = (d.lorawan && d.lorawan.nwkKey) ? String(d.lorawan.nwkKey).trim() : appKeyStr;
+          const nwkKeyBuf = hexToBufLen(nwkKeyStr, 16);
+          const otaaDevice = {
+            isOtaa: true,
+            appEui,
+            devEui,
+            appKey: appKeyStr,
+            appKeyBuf,
+            nwkKeyBuf,
+            devNonce: 0,
+            joined: false,
+            macParams: { ...macParamsDefault },
+            adr: resolveLorawanAdrEnabled(d, lorawanCfg),
+          };
+          if (d.adrReject) otaaDevice.adrReject = true;
+          if (d.devStatus) otaaDevice.devStatus = d.devStatus;
+          if (d.duplicateFirstData) otaaDevice.duplicateFirstData = true;
+          if (d.lorawan && d.lorawan.dataRate !== undefined) otaaDevice.macParams.dataRate = Number(d.lorawan.dataRate);
+          if (d.position && typeof d.position === 'object') {
+            otaaDevice.position = {
+              x: Number(d.position.x) || 0,
+              y: Number(d.position.y) || 0,
+              z: d.position.z != null ? Number(d.position.z) : 2,
+            };
+          } else if (d.location && typeof d.location === 'object') {
+            otaaDevice.position = {
+              x: Number(d.location.x) || 0,
+              y: Number(d.location.y) || 0,
+              z: d.location.z != null ? Number(d.location.z) : 2,
+            };
+          }
+          if (d.anomaly) otaaDevice.anomaly = d.anomaly;
+          otaaDevice._vizLabel = d.name || `config-otaa-${i + 1}`;
+          initNodeState(autoDevices.length, otaaDevice, lorawanCfg, globalUplink, regionChannels, d.nodeState);
+          autoDevices.push({
+            name: d.name || `config-otaa-${i + 1}`,
+            lorawanDevice: otaaDevice,
+            uplink: mergeUplinkCfg(globalUplink, d.uplink || {}),
+          });
+          seenDevEuiHex.add(devEuiHex);
+        }
+      }
       const abpCount = autoDevices.filter(d => !d.lorawanDevice.isOtaa).length;
       const otaaCount = autoDevices.filter(d => d.lorawanDevice.isOtaa).length;
-      console.log(`[✅] 从CSV加载 ${autoDevices.length} 个设备 (ABP: ${abpCount}, OTAA: ${otaaCount})`);
+      console.log(`[✅] 从CSV/Config加载 ${autoDevices.length} 个设备 (ABP: ${abpCount}, OTAA: ${otaaCount})`);
     } catch (e) {
       console.error('[✗] CSV导入失败:', e.message);
     }
@@ -2679,9 +3106,34 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
   }
 
   const allDevices = devices.length > 0 ? devices.map(d => ({ name: d.name, uplink: mergeUplinkCfg(globalUplink, d.uplink || {}) })) : [];
-  const schedTargets = autoDevices.length > 0 ? autoDevices : (allDevices.length > 0 ? allDevices : null);
+  let schedTargets = autoDevices.length > 0 ? autoDevices : (allDevices.length > 0 ? allDevices : null);
   const simulationCfg = config.simulation || {};
   const simulationRuntime = { running: simulationCfg.autoStart === true };
+
+  if (!simulationRuntime.running) {
+    console.log(
+      '[Simulation] autoStart=false: uplinks are PAUSED until POST /start or UI Start — OTAA devices will not send Join Request until then.',
+    );
+  }
+
+  // Optional: clear OTAA session before schedulers start so the first uplink always sends Join Request (e.g. after process restart while ChirpStack still holds old session).
+  if (simulationCfg.resetOtaaOnStart === true && schedTargets && schedTargets.length > 0) {
+    for (const dev of schedTargets) {
+      const ld = dev.lorawanDevice;
+      if (!ld || !ld.isOtaa) continue;
+      const oldHex = ld.devAddrHex;
+      if (oldHex) delete globalDeviceMap[oldHex];
+      ld.joined = false;
+      delete ld.devAddr;
+      delete ld.nwkSKey;
+      delete ld.appSKey;
+      delete ld.devAddrHex;
+      if (ld.devNonce !== undefined) ld.devNonce = 0;
+    }
+    console.log('[Simulation] resetOtaaOnStart: cleared in-memory OTAA session; first uplink will send Join Request.');
+  }
+
+  motionEnvRuntime = buildMotionEnvironmentRuntime(config);
 
   if (schedTargets && schedTargets.length > 0) {
     schedTargets.forEach((dev, idx) => {
@@ -2772,25 +3224,483 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
     return n;
   }
 
+  function findRuntimeTargetByDevEui(devEuiStr) {
+    if (!schedTargets || !schedTargets.length) return null;
+    const key = String(devEuiStr || '').trim().toLowerCase().replace(/\s/g, '');
+    if (!key) return null;
+    for (const target of schedTargets) {
+      const ld = target && target.lorawanDevice;
+      if (!ld || !ld.devEui) continue;
+      if (ld.devEui.toString('hex').toLowerCase() === key) return target;
+    }
+    return null;
+  }
+
+  function hotAddRuntimeNodeByDevEui(devEuiStr) {
+    const key = String(devEuiStr || '').trim().toLowerCase().replace(/\s/g, '');
+    if (!/^[0-9a-f]{16}$/.test(key)) return { added: false, reason: 'invalid_dev_eui' };
+    if (!lorawanCfg || lorawanCfg.enabled !== true) return { added: false, reason: 'lorawan_disabled' };
+    if (findRuntimeTargetByDevEui(key)) return { added: false, reason: 'already_loaded' };
+    const dcfg = (config.devices || []).find((d) => {
+      const de = d && (d.devEui || (d.lorawan && d.lorawan.devEui));
+      return de && String(de).replace(/[^a-fA-F0-9]/g, '').toLowerCase() === key;
+    });
+    if (!dcfg || dcfg.enabled === false) return { added: false, reason: 'not_found_or_disabled' };
+    const act = (dcfg.lorawan && dcfg.lorawan.activation) || dcfg.activation || 'OTAA';
+    if (String(act).toUpperCase() !== 'OTAA') return { added: false, reason: 'only_otaa_supported' };
+    let appEuiStr = (
+      (dcfg?.lorawan?.appEui != null ? String(dcfg.lorawan.appEui).trim() : '') ||
+      (dcfg?.joinEui != null ? String(dcfg.joinEui).trim() : '') ||
+      (lorawanCfg?.appEui != null ? String(lorawanCfg.appEui).trim() : '') ||
+      (lorawanCfg?.appEuiStart != null ? String(lorawanCfg.appEuiStart).trim() : '')
+    );
+    const appKeyStr = (
+      (dcfg?.appKey != null ? String(dcfg.appKey).trim() : '') ||
+      (dcfg?.lorawan?.appKey != null ? String(dcfg.lorawan.appKey).trim() : '') ||
+      (lorawanCfg?.appKey != null ? String(lorawanCfg.appKey).trim() : '')
+    );
+    if (!/^[a-fA-F0-9]{16}$/.test(appEuiStr)) {
+      // Keep hot-reload resilient when UI-created nodes omit JoinEUI.
+      appEuiStr = '0000000000000001';
+    }
+    let finalAppEuiStr = appEuiStr;
+    let finalAppKeyStr = appKeyStr;
+    if (!/^[a-fA-F0-9]{16}$/.test(finalAppEuiStr) || !/^[a-fA-F0-9]{32}$/.test(finalAppKeyStr)) {
+      const sample = (schedTargets || []).find((t) => t && t.lorawanDevice && t.lorawanDevice.isOtaa && t.lorawanDevice.appEui && t.lorawanDevice.appKey);
+      if (sample && sample.lorawanDevice) {
+        finalAppEuiStr = Buffer.from(sample.lorawanDevice.appEui).toString('hex');
+        finalAppKeyStr = String(sample.lorawanDevice.appKey || '');
+      }
+    }
+    if (!/^[a-fA-F0-9]{16}$/.test(finalAppEuiStr) || !/^[a-fA-F0-9]{32}$/.test(finalAppKeyStr)) {
+      return { added: false, reason: 'missing_lorawan_identity' };
+    }
+    const appEui = hexToBufLen(finalAppEuiStr, 8);
+    const devEui = hexToBufLen(key, 8);
+    const appKeyBuf = hexToBufLen(finalAppKeyStr, 16);
+    const nwkKeyStr = dcfg?.lorawan?.nwkKey ? String(dcfg.lorawan.nwkKey).trim() : finalAppKeyStr;
+    const nwkKeyBuf = hexToBufLen(nwkKeyStr, 16);
+    const macParamsDefault = {
+      maxEIRP: 16, uplinkDwellTime: 400, downlinkDwellTime: 400, rx1DROffset: 0, rx2DataRate: 2, rx2Frequency: 923200000,
+      dataRate: 0, txPower: 0, channelMask: 0xFFFF, nbTrans: 1, channels: [923.2, 923.4, 923.6, 923.8, 924.0, 924.2, 924.4, 924.6]
+    };
+    const otaaDevice = {
+      isOtaa: true,
+      appEui,
+      devEui,
+      appKey: finalAppKeyStr,
+      appKeyBuf,
+      nwkKeyBuf,
+      devNonce: 0,
+      joined: false,
+      macParams: { ...macParamsDefault },
+      adr: resolveLorawanAdrEnabled(dcfg, lorawanCfg),
+    };
+    if (dcfg.adrReject) otaaDevice.adrReject = true;
+    if (dcfg.devStatus) otaaDevice.devStatus = dcfg.devStatus;
+    if (dcfg.duplicateFirstData) otaaDevice.duplicateFirstData = true;
+    if (dcfg.lorawan && dcfg.lorawan.dataRate !== undefined) otaaDevice.macParams.dataRate = Number(dcfg.lorawan.dataRate);
+    if (dcfg.position && typeof dcfg.position === 'object') {
+      otaaDevice.position = {
+        x: Number(dcfg.position.x) || 0,
+        y: Number(dcfg.position.y) || 0,
+        z: dcfg.position.z != null ? Number(dcfg.position.z) : 2,
+      };
+    } else if (dcfg.location && typeof dcfg.location === 'object') {
+      otaaDevice.position = {
+        x: Number(dcfg.location.x) || 0,
+        y: Number(dcfg.location.y) || 0,
+        z: dcfg.location.z != null ? Number(dcfg.location.z) : 2,
+      };
+    }
+    if (dcfg.anomaly) otaaDevice.anomaly = dcfg.anomaly;
+    otaaDevice._vizLabel = dcfg.name || `hot-node-${key.slice(-4)}`;
+    const regionChannels = (REGIONS['AS923-1'] && REGIONS['AS923-1'].channels) || [];
+    initNodeState(schedTargets && schedTargets.length ? schedTargets.length : 0, otaaDevice, lorawanCfg, globalUplink, regionChannels, dcfg.nodeState);
+    const target = {
+      name: dcfg.name || `hot-node-${key.slice(-4)}`,
+      lorawanDevice: otaaDevice,
+      uplink: mergeUplinkCfg(globalUplink, dcfg.uplink || {}),
+    };
+    if (!schedTargets) schedTargets = [];
+    schedTargets.push(target);
+    if (motionEnvRuntime && dcfg.movement) {
+      registerMovementFromConfig(motionEnvRuntime, key, dcfg.movement);
+    }
+    startUplinkScheduler(target.uplink, target.name, target.lorawanDevice, schedTargets.length - 1, schedTargets.length);
+    console.log(`[HotReload] Runtime node loaded: ${key.toUpperCase()} (${target.name})`);
+    return { added: true, reason: 'ok' };
+  }
+
+  function hotRemoveRuntimeNodeByDevEui(devEuiStr) {
+    if (!schedTargets || !schedTargets.length) return { removed: false, reason: 'empty_runtime' };
+    const key = String(devEuiStr || '').trim().toLowerCase().replace(/\s/g, '');
+    if (!key) return { removed: false, reason: 'invalid_dev_eui' };
+    const idx = schedTargets.findIndex((target) => {
+      const ld = target && target.lorawanDevice;
+      return ld && ld.devEui && ld.devEui.toString('hex').toLowerCase() === key;
+    });
+    if (idx < 0) return { removed: false, reason: 'not_found' };
+    const target = schedTargets[idx];
+    if (target && target.uplink) target.uplink.enabled = false;
+    const ld = target && target.lorawanDevice;
+    if (ld && ld.devAddrHex) delete globalDeviceMap[ld.devAddrHex];
+    schedTargets.splice(idx, 1);
+    console.log(`[HotReload] Runtime node removed: ${key.toUpperCase()}`);
+    return { removed: true, reason: 'ok' };
+  }
+
+  function hotUpdateRuntimeNodeByDevEui(devEuiStr) {
+    const key = String(devEuiStr || '').trim().toLowerCase().replace(/\s/g, '');
+    if (!/^[0-9a-f]{16}$/.test(key)) return { updated: false, reason: 'invalid_dev_eui' };
+    const target = findRuntimeTargetByDevEui(key);
+    if (!target || !target.lorawanDevice) return { updated: false, reason: 'not_loaded' };
+    const dcfg = (config.devices || []).find((d) => {
+      const de = d && (d.devEui || (d.lorawan && d.lorawan.devEui));
+      return de && String(de).replace(/[^a-fA-F0-9]/g, '').toLowerCase() === key;
+    });
+    if (!dcfg) return { updated: false, reason: 'not_in_config' };
+    const ld = target.lorawanDevice;
+    const nextUplink = mergeUplinkCfg(globalUplink, dcfg.uplink || {});
+    if (!target.uplink) target.uplink = {};
+    Object.assign(target.uplink, nextUplink);
+    if (dcfg.enabled === false) target.uplink.enabled = false;
+    ld.adr = resolveLorawanAdrEnabled(dcfg, lorawanCfg);
+    if (dcfg.adrReject) ld.adrReject = true;
+    else delete ld.adrReject;
+    if (dcfg.devStatus) ld.devStatus = dcfg.devStatus;
+    else delete ld.devStatus;
+    if (dcfg.duplicateFirstData) ld.duplicateFirstData = true;
+    else delete ld.duplicateFirstData;
+    if (dcfg.anomaly && typeof dcfg.anomaly === 'object') {
+      ld.anomaly = dcfg.anomaly;
+    } else {
+      delete ld.anomaly;
+      delete ld._anomalyOverride;
+      delete ld._dropThisUplink;
+      delete ld._rapidJoinScheduled;
+      delete ld._rapidJoinCount;
+    }
+    if (dcfg.lorawan && dcfg.lorawan.dataRate !== undefined && ld.macParams) {
+      ld.macParams.dataRate = Number(dcfg.lorawan.dataRate);
+    }
+    if (dcfg.position && typeof dcfg.position === 'object') {
+      ld.position = {
+        x: Number(dcfg.position.x) || 0,
+        y: Number(dcfg.position.y) || 0,
+        z: dcfg.position.z != null ? Number(dcfg.position.z) : 2,
+      };
+    } else if (dcfg.location && typeof dcfg.location === 'object') {
+      ld.position = {
+        x: Number(dcfg.location.x) || 0,
+        y: Number(dcfg.location.y) || 0,
+        z: dcfg.location.z != null ? Number(dcfg.location.z) : 2,
+      };
+    }
+    target.name = dcfg.name || target.name;
+    console.log(`[HotReload] Runtime node updated: ${key.toUpperCase()} anomaly=${ld.anomaly && ld.anomaly.scenario ? ld.anomaly.scenario : 'none'}`);
+    return { updated: true, reason: 'ok' };
+  }
+  function buildVizNodesFromRuntime() {
+    const out = [];
+    if (!schedTargets || !schedTargets.length) return out;
+    for (const dev of schedTargets) {
+      const ld = dev && dev.lorawanDevice;
+      if (!ld || !ld.devEui) continue;
+      const devEuiUp = ld.devEui.toString('hex').toUpperCase();
+      const dcfg = (config.devices || []).find((d) => {
+        const de = d && (d.devEui || (d.lorawan && d.lorawan.devEui));
+        return de && String(de).replace(/[^a-fA-F0-9]/g, '').toLowerCase() === devEuiUp.toLowerCase();
+      });
+      const uplinkMerged = (dev && dev.uplink) || {};
+      out.push({
+        eui: devEuiUp,
+        enabled: dcfg ? dcfg.enabled !== false : true,
+        name: (dev.name && String(dev.name)) || devEuiUp.slice(-4),
+        devAddr: ld.devAddr ? ld.devAddr.toString('hex').toUpperCase() : 'N/A',
+        fCnt: ld.joined ? Math.max(0, (ld.fCntUp || 0) - 1) : 0,
+        joined: Boolean(ld.joined),
+        rssi: ld.nodeState?.rssi ?? -80,
+        snr: ld.nodeState?.snr ?? 5,
+        uplinks: ld._vizUplinkCount || 0,
+        position: ld.position,
+        anomaly: ld.anomaly,
+        nodeState: dcfg && dcfg.nodeState ? dcfg.nodeState : undefined,
+        adrReject: Boolean(dcfg && dcfg.adrReject),
+        devStatus: Boolean(dcfg && dcfg.devStatus),
+        duplicateFirstData: Boolean(dcfg && dcfg.duplicateFirstData),
+        lastSeen: null,
+        simulator: {
+          intervalMs: uplinkMerged.intervalMs ?? globalUplink.intervalMs ?? 10000,
+          sf: dcfg && dcfg.lorawan && dcfg.lorawan.dataRate != null ? Number(dcfg.lorawan.dataRate) : undefined,
+          txPower: dcfg && dcfg.lorawan && dcfg.lorawan.txPower != null ? Number(dcfg.lorawan.txPower) : undefined,
+          adr:
+            dcfg && dcfg.lorawan && dcfg.lorawan.adr !== undefined
+              ? dcfg.lorawan.adr !== false
+              : (dcfg && dcfg.adr !== undefined ? dcfg.adr !== false : true),
+          fPort: dcfg && dcfg.fPort != null ? Number(dcfg.fPort) : 2,
+          uplinkCodec: dcfg && dcfg.uplink && dcfg.uplink.codec ? String(dcfg.uplink.codec) : (globalUplink.codec || 'simple'),
+        },
+      });
+    }
+    return out;
+  }
+  function applyConfigToRuntimeFromProfile(nextConfig) {
+    const before = safeJsonClone(config) || {};
+    config = nextConfig;
+    replaceObjectContents(globalUplink, config.uplink || {});
+    replaceObjectContents(lorawanCfg, config.lorawan || {});
+    replaceObjectContents(simulationCfg, config.simulation || {});
+    const desiredSet = new Set(
+      (config.devices || [])
+        .filter((d) => d && d.enabled !== false)
+        .map((d) => String(d.devEui || (d.lorawan && d.lorawan.devEui) || '').replace(/[^a-fA-F0-9]/g, '').toLowerCase())
+        .filter((eui) => /^[0-9a-f]{16}$/.test(eui)),
+    );
+    const runtimeSet = new Set(
+      (schedTargets || [])
+        .map((target) => target && target.lorawanDevice && target.lorawanDevice.devEui
+          ? target.lorawanDevice.devEui.toString('hex').toLowerCase()
+          : '')
+        .filter((eui) => /^[0-9a-f]{16}$/.test(eui)),
+    );
+    let added = 0;
+    let updated = 0;
+    let removed = 0;
+    for (const eui of runtimeSet) {
+      if (!desiredSet.has(eui)) {
+        const r = hotRemoveRuntimeNodeByDevEui(eui);
+        if (r.removed) removed += 1;
+      }
+    }
+    for (const eui of desiredSet) {
+      if (!runtimeSet.has(eui)) {
+        const r = hotAddRuntimeNodeByDevEui(eui);
+        if (r.added) added += 1;
+      } else {
+        const r = hotUpdateRuntimeNodeByDevEui(eui);
+        if (r.updated) updated += 1;
+      }
+    }
+    const unsafeReasons = [];
+    if (before && before.lnsHost !== config.lnsHost) unsafeReasons.push('lnsHost_changed');
+    if (before && Number(before.lnsPort || 0) !== Number(config.lnsPort || 0)) unsafeReasons.push('lnsPort_changed');
+    if (before && before.gatewayEui !== config.gatewayEui) unsafeReasons.push('gatewayEui_changed');
+    if (before && String(before?.lorawan?.region || '') !== String(config?.lorawan?.region || '')) unsafeReasons.push('lorawan_region_changed');
+    if (before && String(before?.lorawan?.csvImportPath || '') !== String(config?.lorawan?.csvImportPath || '')) unsafeReasons.push('csvImportPath_changed');
+    updateSimState({
+      gateways: config.multiGateway?.enabled
+        ? (config.multiGateway.gateways || [])
+        : [{ eui: config.gatewayEui, name: 'default-gateway', position: config.signalModel?.gatewayPosition || { x: 0, y: 0, z: 30 } }],
+      nodes: buildVizNodesFromRuntime(),
+      config: {
+        ...(simState.config || {}),
+        simulation: safeJsonClone(config.simulation || {}),
+        lorawan: safeJsonClone(config.lorawan || {}),
+        uplink: safeJsonClone(config.uplink || {}),
+        signalModel: config.signalModel,
+        multiGateway: config.multiGateway,
+        chirpstack: safeJsonClone(config.chirpstack || {}),
+        gatewayEui: config.gatewayEui,
+        lnsHost: config.lnsHost,
+        lnsPort: config.lnsPort,
+        udpBindPort: config.udpBindPort,
+        mqtt: safeJsonClone(config.mqtt || {}),
+        controlServer: safeJsonClone(config.controlServer || {}),
+        control: safeJsonClone(config.control || {}),
+        profileConfig: profileStateForUi(),
+      },
+    });
+    writeSimState();
+    return {
+      added,
+      updated,
+      removed,
+      reloadRequired: unsafeReasons.length > 0,
+      reasons: unsafeReasons,
+    };
+  }
+
+  /**
+   * Write a blank profile JSON and hot-apply it (clear runtime devices; disable CS topology merge for an empty canvas).
+   */
+  function createBlankProfileAndHotApply(body) {
+    const autoName = Boolean(body && body.autoName);
+    let profileName = normalizeProfileName(body && body.name ? body.name : '');
+    if (autoName || !profileName) {
+      profileName = generateUniqueBlankProfileName();
+    }
+    if (!profileName) {
+      return { err: { status: 400, body: { ok: false, error: { code: 'validation', message: 'profile name is required' } } } };
+    }
+    const allowOverwrite = Boolean(body && body.overwrite);
+    if (!autoName && !allowOverwrite && profileNameExists(config, profileName)) {
+      return {
+        err: {
+          status: 409,
+          body: { ok: false, error: { code: 'conflict', message: `profile already exists: ${profileName}` } },
+        },
+      };
+    }
+    const setDefault = Boolean(body && body.setDefault);
+    try {
+      const snapshot = {
+        $lorasimProfileHint:
+          '空白配置集：devices 为空。已暂时关闭 chirpstack.topologyEnabled 以清空画布。主 -c 配置文件未写入；会话内内存态已热更新。需要合并 NS 清单时请改 topologyEnabled 为 true 后应用。',
+        name: profileName,
+        savedAt: new Date().toISOString(),
+        devices: [],
+        multiGateway: {},
+        signalModel: {},
+        uplink: {},
+        simulation: {},
+        lorawan: {},
+        chirpstack: { topologyEnabled: false },
+        mqtt: {},
+        controlServer: {},
+        control: {},
+      };
+      const abs = profileFilePath(config, profileName);
+      ensureProfilesDir(path.dirname(abs));
+      fs.writeFileSync(abs, JSON.stringify(snapshot, null, 2) + '\n', 'utf8');
+      const merged = applyProfileSnapshot(config, snapshot);
+      setActiveDefaultProfile(profileName, setDefault);
+      merged.profileConfig = safeJsonClone(config.profileConfig);
+      const applied = applyConfigToRuntimeFromProfile(merged);
+      // Do not persistConfig: keep the main -c JSON on disk unchanged (only profiles/<name>.json was written).
+      return {
+        ok: true,
+        abs,
+        applied,
+        data: {
+          ...profileStateForUi(),
+          path: abs,
+          applied: { added: applied.added, updated: applied.updated, removed: applied.removed },
+          reloadRequired: applied.reloadRequired,
+          reasons: applied.reasons,
+          message: applied.reloadRequired
+            ? `已新建「${profileName}」并热更新；主配置文件未写入磁盘；建议重启模拟器（${applied.reasons.join(', ')}）`
+            : `已新建「${profileName}」并热更新；主配置文件（-c）未修改，仅写入 profiles 目录`,
+        },
+      };
+    } catch (e) {
+      return {
+        err: { status: 500, body: { ok: false, error: { code: 'internal', message: e.message || String(e) } } },
+      };
+    }
+  }
+
+  function updateRuntimePosition(kind, id, position) {
+    const pos = {
+      x: Number(position?.x) || 0,
+      y: Number(position?.y) || 0,
+      z: position?.z != null ? Number(position.z) : (kind === 'gateway' ? 30 : 2),
+    };
+    const key = String(id || '').toLowerCase();
+    if (kind === 'node') {
+      if (!schedTargets || !schedTargets.length) return;
+      for (const dev of schedTargets) {
+        const ld = dev && dev.lorawanDevice;
+        if (!ld || !ld.devEui) continue;
+        if (ld.devEui.toString('hex').toLowerCase() === key) {
+          ld.position = pos;
+          console.log(`[Layout] Runtime node ${id} -> (${pos.x}, ${pos.y}, ${pos.z})`);
+          return;
+        }
+      }
+      console.log(`[Layout] Runtime node ${id} not found in schedTargets`);
+      return;
+    }
+    const mgw = config.multiGateway;
+    if (!mgw || !Array.isArray(mgw.gateways)) return;
+    for (let i = 0; i < mgw.gateways.length; i++) {
+      const gw = mgw.gateways[i];
+      if (!gw || !gw.eui) continue;
+      if (String(gw.eui).toLowerCase() === key) {
+        gw.position = pos;
+        console.log(`[Layout] Runtime gateway ${id} -> (${pos.x}, ${pos.y}, ${pos.z})`);
+        return;
+      }
+    }
+    console.log(`[Layout] Runtime gateway ${id} not found in multiGateway.gateways`);
+  }
+
+  const idempotencyStore = new IdempotencyStore();
+  orchestrator = new OrchestratorService({
+    getConfig: () => config,
+    getSimState: () => simState,
+    updateSimState: (updates) => updateSimState(updates),
+    writeSimState: () => writeSimState(),
+    updateRuntimePosition,
+    persistConfig,
+  });
+
+  if (!mqttEnabled && config.chirpstack && config.chirpstack.integrationMqtt && config.chirpstack.integrationMqtt.enabled) {
+    const { startChirpstackIntegrationMqtt } = require('./src/chirpstack/integration-mqtt');
+    const h = startChirpstackIntegrationMqtt(config.chirpstack.integrationMqtt, orchestrator, (m) => console.log(m));
+    topologyMqttStop = h.stop;
+  }
+
+  function parseJsonBody(req, cb) {
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > 1024 * 1024) req.destroy();
+    });
+    req.on('end', () => {
+      if (!body) return cb(null, {});
+      try {
+        return cb(null, JSON.parse(body));
+      } catch (e) {
+        return cb(e);
+      }
+    });
+  }
+
   const controlCfg = config.controlServer || config.control || {};
   if (controlCfg.enabled) {
+    const orchestratorApiEnabled = String(process.env.ENABLE_ORCHESTRATOR_API || 'true').toLowerCase() !== 'false';
     const controlPort = Number(controlCfg.port) || 9999;
     const server = http.createServer((req, res) => {
       const send = (status, body) => {
         res.writeHead(status, {
           'Content-Type': 'application/json; charset=utf-8',
           'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
+          'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Idempotency-Key',
         });
         res.end(typeof body === 'string' ? body : JSON.stringify(body));
       };
+      const sendResult = (result, okStatus = 200) => {
+        if (result && result.ok === false) {
+          const code = result.error && result.error.code;
+          const status = code === 'validation' ? 400
+            : code === 'not_found' ? 404
+            : code === 'conflict_revision' ? 409
+            : (code === 'partial_success' ? 207 : 500);
+          return send(status, result);
+        }
+        return send(okStatus, result);
+      };
       if (req.method === 'OPTIONS') return send(204, {});
-      const url = req.url || '';
+      const reqUrl = new URL(req.url || '/', 'http://localhost');
+      let url = reqUrl.pathname || '';
+      if (url.length > 1 && url.endsWith('/')) url = url.slice(0, -1);
       if ((req.method === 'GET' || req.method === 'POST') && (url.startsWith('/start') || url === '/start')) {
+        let resetCount = 0;
+        if (simulationCfg.resetOtaaOnStart === true) {
+          resetCount = resetAllOtaa({ resetDevNonce: true });
+        }
         simulationRuntime.running = true;
         updateSimState({ running: true });
-        return send(200, { ok: true, running: true, message: 'Simulation started.' });
+        return send(200, {
+          ok: true,
+          running: true,
+          message:
+            resetCount > 0
+              ? `Simulation started. ${resetCount} OTAA device(s) reset for re-join.`
+              : 'Simulation started.',
+        });
       }
       if ((req.method === 'GET' || req.method === 'POST') && (url.startsWith('/stop') || url === '/stop')) {
         simulationRuntime.running = false;
@@ -2800,14 +3710,206 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
       if (req.method === 'GET' && (url.startsWith('/status') || url === '/status')) {
         return send(200, { ok: true, running: simulationRuntime.running });
       }
+      if (req.method === 'GET' && (url === '/sim-state' || url === '/state')) {
+        simState.config = {
+          ...(simState.config || {}),
+          profileConfig: profileStateForUi(),
+        };
+        return send(200, orchestrator.getSimStateForHttp());
+      }
+      if (req.method === 'GET' && (url === '/config-profiles' || url === '/profiles' || url === '/profile')) {
+        return send(200, { ok: true, data: profileStateForUi() });
+      }
+      if (req.method === 'POST' && (url === '/config-profiles/save' || url === '/profile/save' || url === '/profiles/save')) {
+        return parseJsonBody(req, (err, body) => {
+          if (err) return send(400, { ok: false, error: { code: 'validation', message: err.message } });
+          try {
+            if (String((body && body.mode) || '').toLowerCase() === 'blank') {
+              const blankRes = createBlankProfileAndHotApply(body);
+              if (blankRes.err) return send(blankRes.err.status, blankRes.err.body);
+              return send(200, { ok: true, data: blankRes.data });
+            }
+            const profileName = normalizeProfileName(body && body.name ? body.name : '');
+            if (!profileName) {
+              return send(400, { ok: false, error: { code: 'validation', message: 'profile name is required' } });
+            }
+            const allowOverwrite = Boolean(body && body.overwrite);
+            if (!allowOverwrite && profileNameExists(config, profileName)) {
+              return send(409, { ok: false, error: { code: 'conflict', message: `profile already exists: ${profileName}` } });
+            }
+            const setDefault = Boolean(body && body.setDefault);
+            const snapshot = {
+              name: profileName,
+              savedAt: new Date().toISOString(),
+              devices: safeJsonClone(config.devices || []),
+              multiGateway: safeJsonClone(config.multiGateway || {}),
+              signalModel: safeJsonClone(config.signalModel || {}),
+              uplink: safeJsonClone(config.uplink || {}),
+              simulation: safeJsonClone(config.simulation || {}),
+              lorawan: safeJsonClone(config.lorawan || {}),
+              chirpstack: safeJsonClone(config.chirpstack || {}),
+              gatewayEui: config.gatewayEui,
+              lnsHost: config.lnsHost,
+              lnsPort: config.lnsPort,
+              udpBindPort: config.udpBindPort,
+              mqtt: safeJsonClone(config.mqtt || {}),
+              controlServer: safeJsonClone(config.controlServer || {}),
+              control: safeJsonClone(config.control || {}),
+            };
+            const abs = profileFilePath(config, profileName);
+            ensureProfilesDir(path.dirname(abs));
+            fs.writeFileSync(abs, JSON.stringify(snapshot, null, 2) + '\n', 'utf8');
+            setActiveDefaultProfile(profileName, setDefault);
+            persistConfig(config);
+            updateSimState({
+              config: {
+                ...(simState.config || {}),
+                profileConfig: profileStateForUi(),
+              },
+            });
+            return send(200, { ok: true, data: profileStateForUi() });
+          } catch (e) {
+            return send(500, { ok: false, error: { code: 'internal', message: e.message || String(e) } });
+          }
+        });
+      }
+      if (req.method === 'POST' && (url === '/config-profiles/create' || url === '/profile/create' || url === '/profiles/create')) {
+        return parseJsonBody(req, (err, body) => {
+          if (err) return send(400, { ok: false, error: { code: 'validation', message: err.message } });
+          const blankRes = createBlankProfileAndHotApply(body);
+          if (blankRes.err) return send(blankRes.err.status, blankRes.err.body);
+          return send(200, { ok: true, data: blankRes.data });
+        });
+      }
+      if (req.method === 'POST' && (url === '/config-profiles/load' || url === '/profile/load' || url === '/profiles/load')) {
+        return parseJsonBody(req, (err, body) => {
+          if (err) return send(400, { ok: false, error: { code: 'validation', message: err.message } });
+          try {
+            const profileName = normalizeProfileName(body && body.name ? body.name : '');
+            if (!profileName) {
+              return send(400, { ok: false, error: { code: 'validation', message: 'profile name is required' } });
+            }
+            const setDefault = body && Object.prototype.hasOwnProperty.call(body, 'setDefault')
+              ? Boolean(body.setDefault)
+              : undefined;
+            const abs = profileFilePath(config, profileName);
+            if (!fs.existsSync(abs)) {
+              return send(404, { ok: false, error: { code: 'not_found', message: `profile not found: ${profileName}` } });
+            }
+            const snapshot = JSON.parse(fs.readFileSync(abs, 'utf8'));
+            config = applyProfileSnapshot(config, snapshot);
+            setActiveDefaultProfile(profileName, setDefault);
+            persistConfig(config);
+            updateSimState({
+              config: {
+                ...(simState.config || {}),
+                profileConfig: profileStateForUi(),
+              },
+            });
+            return send(200, {
+              ok: true,
+              data: {
+                ...profileStateForUi(),
+                reloadRequired: true,
+                message: 'Profile applied to config.json. Restart simulator to fully load runtime nodes/gateways.',
+              },
+            });
+          } catch (e) {
+            return send(500, { ok: false, error: { code: 'internal', message: e.message || String(e) } });
+          }
+        });
+      }
+      if (req.method === 'POST' && (url === '/config-profiles/apply' || url === '/profile/apply' || url === '/profiles/apply')) {
+        return parseJsonBody(req, (err, body) => {
+          if (err) return send(400, { ok: false, error: { code: 'validation', message: err.message } });
+          try {
+            const profileName = normalizeProfileName(body && body.name ? body.name : '');
+            if (!profileName) {
+              return send(400, { ok: false, error: { code: 'validation', message: 'profile name is required' } });
+            }
+            const setDefault = body && Object.prototype.hasOwnProperty.call(body, 'setDefault')
+              ? Boolean(body.setDefault)
+              : undefined;
+            const abs = profileFilePath(config, profileName);
+            if (!fs.existsSync(abs)) {
+              return send(404, { ok: false, error: { code: 'not_found', message: `profile not found: ${profileName}` } });
+            }
+            const snapshot = JSON.parse(fs.readFileSync(abs, 'utf8'));
+            const merged = applyProfileSnapshot(config, snapshot);
+            setActiveDefaultProfile(profileName, setDefault);
+            merged.profileConfig = safeJsonClone(config.profileConfig);
+            const applied = applyConfigToRuntimeFromProfile(merged);
+            persistConfig(config);
+            return send(200, {
+              ok: true,
+              data: {
+                ...profileStateForUi(),
+                applied: { added: applied.added, updated: applied.updated, removed: applied.removed },
+                reloadRequired: applied.reloadRequired,
+                reasons: applied.reasons,
+                message: applied.reloadRequired
+                  ? `Profile applied with partial hot update. Restart recommended (${applied.reasons.join(', ')}).`
+                  : 'Profile applied and hot-updated successfully.',
+              },
+            });
+          } catch (e) {
+            return send(500, { ok: false, error: { code: 'internal', message: e.message || String(e) } });
+          }
+        });
+      }
+      if (req.method === 'POST' && (url === '/config-profiles/rename' || url === '/profile/rename' || url === '/profiles/rename')) {
+        return parseJsonBody(req, (err, body) => {
+          if (err) return send(400, { ok: false, error: { code: 'validation', message: err.message } });
+          try {
+            const fromName = normalizeProfileName(body && body.from ? body.from : '');
+            const toName = normalizeProfileName(body && body.to ? body.to : '');
+            if (!fromName || !toName) {
+              return send(400, { ok: false, error: { code: 'validation', message: 'from/to profile name required' } });
+            }
+            if (fromName === toName) {
+              return send(400, { ok: false, error: { code: 'validation', message: 'source and target names are identical' } });
+            }
+            const fromPath = profileFilePath(config, fromName);
+            const toPath = profileFilePath(config, toName);
+            if (!fs.existsSync(fromPath)) {
+              return send(404, { ok: false, error: { code: 'not_found', message: `profile not found: ${fromName}` } });
+            }
+            if (fs.existsSync(toPath)) {
+              return send(409, { ok: false, error: { code: 'conflict', message: `target profile already exists: ${toName}` } });
+            }
+            fs.renameSync(fromPath, toPath);
+            if (!config.profileConfig || typeof config.profileConfig !== 'object') config.profileConfig = {};
+            if (normalizeProfileName(config.profileConfig.activeProfile || '') === fromName) {
+              config.profileConfig.activeProfile = toName;
+            }
+            if (normalizeProfileName(config.profileConfig.defaultProfile || '') === fromName) {
+              config.profileConfig.defaultProfile = toName;
+            }
+            persistConfig(config);
+            updateSimState({
+              config: {
+                ...(simState.config || {}),
+                profileConfig: profileStateForUi(),
+              },
+            });
+            return send(200, {
+              ok: true,
+              data: {
+                ...profileStateForUi(),
+                message: `Profile renamed: ${fromName} -> ${toName}`,
+              },
+            });
+          } catch (e) {
+            return send(500, { ok: false, error: { code: 'internal', message: e.message || String(e) } });
+          }
+        });
+      }
       if ((req.method === 'GET' || req.method === 'POST') && (url.startsWith('/reset') || url === '/reset')) {
         let devEui = null;
         if (req.method === 'POST') {
-          let body = '';
-          req.on('data', (chunk) => { body += chunk; });
-          req.on('end', () => {
+          parseJsonBody(req, (err, j = {}) => {
             try {
-              const j = body ? JSON.parse(body) : {};
+              if (err) return send(400, { ok: false, message: err.message });
               devEui = j.devEui != null ? String(j.devEui) : null;
               const abpResetFcnt = j.abpResetFcnt !== false;
               const resetDevNonce = j.resetDevNonce !== false;
@@ -2823,11 +3925,7 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
           });
           return;
         }
-        const q = url.indexOf('?');
-        if (q >= 0) {
-          const params = new URLSearchParams(url.slice(q));
-          devEui = params.get('devEui') || params.get('DevEUI');
-        }
+        devEui = reqUrl.searchParams.get('devEui') || reqUrl.searchParams.get('DevEUI');
         if (devEui) {
           const ok = resetDeviceByDevEui(devEui);
           return send(200, { ok, message: ok ? `Device ${devEui} reset.` : `Device ${devEui} not found.` });
@@ -2835,15 +3933,145 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
         const n = resetAllOtaa();
         return send(200, { ok: true, message: `${n} OTAA device(s) reset for re-join.` });
       }
-      send(404, { ok: false, message: 'Not found. Use /start, /stop, /status, /reset.' });
+
+      const idemKey = req.headers['idempotency-key'] ? String(req.headers['idempotency-key']) : '';
+      const idemCached = idempotencyStore.get(req.method || 'GET', url, idemKey);
+      if (idemCached) {
+        return send(idemCached.status, idemCached.body);
+      }
+      if (!orchestratorApiEnabled && (
+        url === '/resources/nodes' ||
+        /^\/resources\/nodes\/[A-Fa-f0-9]{16}$/.test(url) ||
+        url === '/resources/gateways' ||
+        /^\/resources\/gateways\/[A-Fa-f0-9]{16}$/.test(url) ||
+        url === '/resources/simulation' ||
+        url === '/layout/apply' ||
+        url === '/sync/retry'
+      )) {
+        return send(503, { ok: false, error: { code: 'feature_disabled', message: 'Orchestrator API disabled by ENABLE_ORCHESTRATOR_API=false' } });
+      }
+
+      if (req.method === 'POST' && (url === '/resources/nodes')) {
+        return parseJsonBody(req, async (err, body) => {
+          if (err) return send(400, { ok: false, error: { code: 'validation', message: err.message } });
+          const result = await orchestrator.createNode(body);
+          if (result && result.ok && result.data && result.data.node && result.data.node.devEui) {
+            const hr = hotAddRuntimeNodeByDevEui(result.data.node.devEui);
+            if (!hr.added && hr.reason !== 'already_loaded') {
+              console.log(`[HotReload] Runtime node skip: ${result.data.node.devEui} (${hr.reason})`);
+            }
+          }
+          const status = result.ok ? 200 : (result.error?.code === 'partial_success' ? 207 : 400);
+          idempotencyStore.set(req.method, url, idemKey, { status, body: result });
+          return sendResult(result, status);
+        });
+      }
+      if (req.method === 'PATCH' && /^\/resources\/nodes\/[A-Fa-f0-9]{16}$/.test(url)) {
+        const devEui = url.split('/').pop();
+        return parseJsonBody(req, async (err, body) => {
+          if (err) return send(400, { ok: false, error: { code: 'validation', message: err.message } });
+          const result = await orchestrator.updateNode(devEui, body);
+          if (result && result.ok) {
+            const hu = hotUpdateRuntimeNodeByDevEui(devEui);
+            if (!hu.updated) {
+              console.log(`[HotReload] Runtime node update skip: ${devEui} (${hu.reason})`);
+            }
+          }
+          const status = result.ok ? 200 : (result.error?.code === 'partial_success' ? 207 : 400);
+          idempotencyStore.set(req.method, url, idemKey, { status, body: result });
+          return sendResult(result, status);
+        });
+      }
+      if (req.method === 'DELETE' && /^\/resources\/nodes\/[A-Fa-f0-9]{16}$/.test(url)) {
+        const devEui = url.split('/').pop();
+        return parseJsonBody(req, async (err, body) => {
+          if (err) return send(400, { ok: false, error: { code: 'validation', message: err.message } });
+          const result = await orchestrator.deleteNode(devEui, body || {});
+          if (result && result.ok) hotRemoveRuntimeNodeByDevEui(devEui);
+          const status = result.ok ? 200 : 400;
+          idempotencyStore.set(req.method, url, idemKey, { status, body: result });
+          return sendResult(result, status);
+        });
+      }
+      if (req.method === 'POST' && (url === '/resources/gateways')) {
+        return parseJsonBody(req, async (err, body) => {
+          if (err) return send(400, { ok: false, error: { code: 'validation', message: err.message } });
+          const result = await orchestrator.createGateway(body);
+          const status = result.ok ? 200 : (result.error?.code === 'partial_success' ? 207 : 400);
+          idempotencyStore.set(req.method, url, idemKey, { status, body: result });
+          return sendResult(result, status);
+        });
+      }
+      if (req.method === 'PATCH' && /^\/resources\/gateways\/[A-Fa-f0-9]{16}$/.test(url)) {
+        const gatewayId = url.split('/').pop();
+        return parseJsonBody(req, async (err, body) => {
+          if (err) return send(400, { ok: false, error: { code: 'validation', message: err.message } });
+          const result = await orchestrator.updateGateway(gatewayId, body);
+          const status = result.ok ? 200 : (result.error?.code === 'partial_success' ? 207 : 400);
+          idempotencyStore.set(req.method, url, idemKey, { status, body: result });
+          return sendResult(result, status);
+        });
+      }
+      if (req.method === 'DELETE' && /^\/resources\/gateways\/[A-Fa-f0-9]{16}$/.test(url)) {
+        const gatewayId = url.split('/').pop();
+        return parseJsonBody(req, async (err, body) => {
+          if (err) return send(400, { ok: false, error: { code: 'validation', message: err.message } });
+          const result = await orchestrator.deleteGateway(gatewayId, body || {});
+          const status = result.ok ? 200 : 400;
+          idempotencyStore.set(req.method, url, idemKey, { status, body: result });
+          return sendResult(result, status);
+        });
+      }
+      if (req.method === 'PATCH' && url === '/resources/simulation') {
+        return parseJsonBody(req, async (err, body) => {
+          if (err) return send(400, { ok: false, error: { code: 'validation', message: err.message } });
+          const result = await orchestrator.updateSimulation(body);
+          const status = result.ok ? 200 : 400;
+          idempotencyStore.set(req.method, url, idemKey, { status, body: result });
+          return sendResult(result, status);
+        });
+      }
+      if (req.method === 'POST' && url === '/layout/apply') {
+        return parseJsonBody(req, async (err, body) => {
+          if (err) return send(400, { ok: false, error: { code: 'validation', message: err.message } });
+          const result = await orchestrator.applyLayout(body);
+          const status = result.ok ? 200 : (result.error?.code === 'conflict_revision' ? 409 : 400);
+          idempotencyStore.set(req.method, url, idemKey, { status, body: result });
+          return sendResult(result, status);
+        });
+      }
+      if (req.method === 'POST' && url === '/sync/retry') {
+        return parseJsonBody(req, async (err, body) => {
+          if (err) return send(400, { ok: false, error: { code: 'validation', message: err.message } });
+          const result = await orchestrator.retry(body.resourceIds || []);
+          const status = 200;
+          idempotencyStore.set(req.method, url, idemKey, { status, body: result });
+          return sendResult(result, status);
+        });
+      }
+      if (req.method === 'POST' && (url === '/chirpstack/refresh-inventory' || url === '/topology/refresh-inventory')) {
+        (async () => {
+          try {
+            const data = await orchestrator.refreshChirpstackInventory();
+            return send(200, { ok: true, data });
+          } catch (e) {
+            return send(500, { ok: false, error: { message: e.message || String(e) } });
+          }
+        })();
+        return;
+      }
+
+      send(404, { ok: false, message: 'Not found. Use /start, /stop, /status, /reset, /sim-state, /resources/*, /resources/simulation, /layout/apply, /sync/retry, /chirpstack/refresh-inventory, /config-profiles/* (create/save/load/apply/rename) (or /profile/*).' });
     });
     server.listen(controlPort, controlCfg.host || '0.0.0.0', () => {
-      console.log(`[Control] HTTP server on port ${controlPort} | /start /stop /status /reset`);
+      console.log(`[Control] HTTP server on port ${controlPort} | /start /stop /status /reset /sim-state /resources/* /resources/simulation /layout/apply /sync/retry (orchestratorApiEnabled=${orchestratorApiEnabled})`);
     });
   }
 
   function shutdown() {
     console.log('\n[🛑] Stopping simulator...\n');
+    if (topologyInventoryTimer) clearInterval(topologyInventoryTimer);
+    topologyMqttStop();
     if (pullTimer) clearInterval(pullTimer);
     uplinkTimers.forEach(t => {
       if (t && typeof t.clear === 'function') t.clear();
@@ -2862,8 +4090,50 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
       const ld = dev.lorawanDevice;
       if (!ld || !ld.devEui) continue;
       const devEuiUp = ld.devEui.toString('hex').toUpperCase();
+      const uplinkMerged = dev.uplink || {};
+      const intervalMsGuess = uplinkMerged.intervalMs ?? globalUplink.intervalMs ?? 10000;
+      const dcfg = (config.devices || []).find((d) => {
+        if (!d) return false;
+        const de = d.devEui || (d.lorawan && d.lorawan.devEui);
+        if (!de) return false;
+        const norm = String(de).replace(/[^a-fA-F0-9]/g, '').toLowerCase();
+        return norm === devEuiUp.toLowerCase();
+      });
+      let appKeyStr = '';
+      if (dcfg) {
+        const k = dcfg.appKey || (dcfg.lorawan && dcfg.lorawan.appKey);
+        if (k) appKeyStr = String(k);
+      }
+      const sfVal =
+        dcfg && dcfg.dataRate != null
+          ? Number(dcfg.dataRate)
+          : dcfg && dcfg.lorawan && dcfg.lorawan.dataRate != null
+            ? Number(dcfg.lorawan.dataRate)
+            : undefined;
+      const txVal =
+        dcfg && dcfg.txPower != null
+          ? Number(dcfg.txPower)
+          : dcfg && dcfg.lorawan && dcfg.lorawan.txPower != null
+            ? Number(dcfg.lorawan.txPower)
+            : undefined;
+      const adrVal =
+        dcfg && dcfg.adr !== undefined
+          ? dcfg.adr !== false
+          : dcfg && dcfg.lorawan && dcfg.lorawan.adr !== undefined
+            ? dcfg.lorawan.adr !== false
+            : true;
+      const simulator = {
+        intervalMs: dcfg && dcfg.interval != null ? Math.max(1, Number(dcfg.interval)) * 1000 : intervalMsGuess,
+        sf: sfVal,
+        txPower: txVal,
+        adr: adrVal,
+        fPort: dcfg && dcfg.fPort != null ? Number(dcfg.fPort) : 2,
+        uplinkCodec: dcfg && dcfg.uplink && dcfg.uplink.codec ? String(dcfg.uplink.codec) : (globalUplink.codec || 'simple'),
+        appKeyConfigured: Boolean(appKeyStr && appKeyStr.replace(/\s/g, '').length === 32),
+      };
       initialVizNodes.push({
         eui: devEuiUp,
+        enabled: dcfg ? dcfg.enabled !== false : true,
         name: (dev.name && String(dev.name)) || devEuiUp.slice(-4),
         devAddr: ld.devAddr ? ld.devAddr.toString('hex').toUpperCase() : 'N/A',
         fCnt: ld.joined ? Math.max(0, (ld.fCntUp || 0) - 1) : 0,
@@ -2873,7 +4143,12 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
         uplinks: 0,
         position: ld.position,
         anomaly: ld.anomaly,
+        nodeState: dcfg && dcfg.nodeState ? dcfg.nodeState : undefined,
+        adrReject: Boolean(dcfg && dcfg.adrReject),
+        devStatus: Boolean(dcfg && dcfg.devStatus),
+        duplicateFirstData: Boolean(dcfg && dcfg.duplicateFirstData),
         lastSeen: null,
+        simulator,
       });
     }
   }
@@ -2881,7 +4156,40 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
   // ===== 启动状态导出器 =====
   const stateIntervalMs = config.visualizer?.stateIntervalMs || 1000;
   startStateExporter(stateIntervalMs);
-  
+
+  const persistedTopologyFields = (() => {
+    const defaults = {
+      topologyOverlay: { nodes: {}, gateways: {} },
+      chirpstackLiveRx: { byDevEui: {} },
+      chirpstackInventory: { nodes: [], gateways: [], updatedAt: null, error: null },
+    };
+    try {
+      if (fs.existsSync(SIM_STATE_FILE)) {
+        const prev = JSON.parse(fs.readFileSync(SIM_STATE_FILE, 'utf8'));
+        if (prev.topologyOverlay && typeof prev.topologyOverlay === 'object') {
+          defaults.topologyOverlay = {
+            nodes: { ...(prev.topologyOverlay.nodes || {}) },
+            gateways: { ...(prev.topologyOverlay.gateways || {}) },
+          };
+        }
+        if (prev.chirpstackLiveRx && typeof prev.chirpstackLiveRx === 'object' && prev.chirpstackLiveRx.byDevEui) {
+          defaults.chirpstackLiveRx = { byDevEui: { ...prev.chirpstackLiveRx.byDevEui } };
+        }
+        if (prev.chirpstackInventory && typeof prev.chirpstackInventory === 'object') {
+          defaults.chirpstackInventory = {
+            nodes: Array.isArray(prev.chirpstackInventory.nodes) ? prev.chirpstackInventory.nodes : [],
+            gateways: Array.isArray(prev.chirpstackInventory.gateways) ? prev.chirpstackInventory.gateways : [],
+            updatedAt: prev.chirpstackInventory.updatedAt || null,
+            error: prev.chirpstackInventory.error || null,
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('[State] merge topology from sim-state.json failed:', e.message);
+    }
+    return defaults;
+  })();
+
   // 初始化状态
   updateSimState({
     running: simulationRuntime.running,
@@ -2896,12 +4204,28 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
         ],
     config: {
       signalModel: config.signalModel,
-      multiGateway: config.multiGateway
+      multiGateway: config.multiGateway,
+      profileConfig: profileStateForUi(),
     },
     stats: { uplinks: 0, joins: 0, errors: 0 },
     packetLog: [],
     nodes: initialVizNodes,
+    ...persistedTopologyFields,
   });
+
+  const invPollSec = Number(config.chirpstack?.inventoryPollSec);
+  const invPollMs = Number.isFinite(invPollSec) && invPollSec >= 5 ? invPollSec * 1000 : 60000;
+  const topologyImportOn =
+    String(process.env.ENABLE_CHIRPSTACK_TOPOLOGY || '').trim() !== ''
+      ? /^(1|true|yes)$/i.test(String(process.env.ENABLE_CHIRPSTACK_TOPOLOGY))
+      : Boolean(config.chirpstack && config.chirpstack.topologyEnabled);
+  if (topologyImportOn) {
+    void orchestrator.refreshChirpstackInventory();
+    topologyInventoryTimer = setInterval(() => {
+      orchestrator.refreshChirpstackInventory().catch((err) => console.warn('[Topology] inventory:', err.message));
+    }, invPollMs);
+  }
+
   console.log(`[State] State exporter started (interval: ${stateIntervalMs}ms)`);
   console.log(`[State] Write file: ${SIM_STATE_FILE} (read by local scripts/tools)`);
   // ===== 状态导出器结束 =====
@@ -2928,13 +4252,14 @@ const DEFAULT_GATEWAY_CONFIG = {
   mode: 'overlapping', // overlapping / handover / failover
   gateways: []
 };
+const PATH_LOSS_DISTANCE_MULTIPLIER = 10;
 
 // 计算网关接收信号
 function calculateGatewayReception(device, devicePosition, gateway, globalConfig) {
   const distance = calculateDistance(
     devicePosition,
     gateway.position || { x: 0, y: 0, z: 30 }
-  );
+  ) * PATH_LOSS_DISTANCE_MULTIPLIER;
   
   const frequency = device.frequency || 923200000;
   const fspl = calculateFSPL(distance, frequency);
@@ -2963,7 +4288,10 @@ function calculateGatewayReception(device, devicePosition, gateway, globalConfig
   const rxGain = gateway.rxGain || 5.0;
   
   const rssi = txPower + txGain + rxGain - totalLoss;
-  const noiseFloor = globalConfig.signalModel?.noiseFloor || -120;
+  const noiseFloor =
+    gateway.noiseFloor != null
+      ? Number(gateway.noiseFloor)
+      : (globalConfig.signalModel?.noiseFloor ?? -120);
   const snr = rssi - noiseFloor - 6; // 6dB噪声系数
   
   return {

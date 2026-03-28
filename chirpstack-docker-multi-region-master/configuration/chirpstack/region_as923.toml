@@ -93,8 +93,10 @@
     # Gateway channel configuration.
     #
     # Note: this configuration is only used in case the gateway is using the
-    # ChirpStack Concentratord daemon. In any other case, this configuration 
+    # ChirpStack Concentratord daemon. In any other case, this configuration
     # is ignored.
+    #
+    # AS923 8-Channel Configuration (923.2 - 924.6 MHz, 200kHz spacing)
     [[regions.gateway.channels]]
       frequency=923200000
       bandwidth=125000
@@ -107,9 +109,51 @@
       modulation="LORA"
       spreading_factors=[7, 8, 9, 10, 11, 12]
 
+    [[regions.gateway.channels]]
+      frequency=923600000
+      bandwidth=125000
+      modulation="LORA"
+      spreading_factors=[7, 8, 9, 10, 11, 12]
+
+    [[regions.gateway.channels]]
+      frequency=923800000
+      bandwidth=125000
+      modulation="LORA"
+      spreading_factors=[7, 8, 9, 10, 11, 12]
+
+    [[regions.gateway.channels]]
+      frequency=924000000
+      bandwidth=125000
+      modulation="LORA"
+      spreading_factors=[7, 8, 9, 10, 11, 12]
+
+    [[regions.gateway.channels]]
+      frequency=924200000
+      bandwidth=125000
+      modulation="LORA"
+      spreading_factors=[7, 8, 9, 10, 11, 12]
+
+    [[regions.gateway.channels]]
+      frequency=924400000
+      bandwidth=125000
+      modulation="LORA"
+      spreading_factors=[7, 8, 9, 10, 11, 12]
+
+    [[regions.gateway.channels]]
+      frequency=924600000
+      bandwidth=125000
+      modulation="LORA"
+      spreading_factors=[7, 8, 9, 10, 11, 12]
+
+    [[regions.gateway.channels]]
+      frequency=924500000
+      bandwidth=250000
+      modulation="LORA"
+      spreading_factors=[7]
+
   # Region specific network configuration.
   [regions.network]
-    
+
     # Installation margin (dB) used by the ADR engine.
     #
     # A higher number means that the network-server will keep more margin,
@@ -201,3 +245,33 @@
       # set this to 0 to use the default frequency plan for the configured region
       # (which could be frequency hopping).
       ping_slot_frequency=0
+    # Extra channels
+    [[regions.network.extra_channels]]
+      frequency=923600000
+      min_dr=0
+      max_dr=5
+
+    [[regions.network.extra_channels]]
+      frequency=923800000
+      min_dr=0
+      max_dr=5
+
+    [[regions.network.extra_channels]]
+      frequency=924000000
+      min_dr=0
+      max_dr=5
+
+    [[regions.network.extra_channels]]
+      frequency=924200000
+      min_dr=0
+      max_dr=5
+
+    [[regions.network.extra_channels]]
+      frequency=924400000
+      min_dr=0
+      max_dr=5
+
+    [[regions.network.extra_channels]]
+      frequency=924600000
+      min_dr=0
+      max_dr=5

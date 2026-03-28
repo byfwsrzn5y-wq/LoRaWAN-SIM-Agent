@@ -1,0 +1,17 @@
+{
+  "$lorasimProfileHint": "空白配置集：devices 为空。已暂时关闭 chirpstack.topologyEnabled 以清空画布。主 -c 配置文件未写入；会话内内存态已热更新。需要合并 NS 清单时请改 topologyEnabled 为 true 后应用。",
+  "name": "blank-1774739123657",
+  "savedAt": "2026-03-28T23:05:23.657Z",
+  "devices": [],
+  "multiGateway": {},
+  "signalModel": {},
+  "uplink": {},
+  "simulation": {},
+  "lorawan": {},
+  "chirpstack": {
+    "topologyEnabled": false
+  },
+  "mqtt": {},
+  "controlServer": {},
+  "control": {}
+}

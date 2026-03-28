@@ -2,6 +2,17 @@
 
 通过 OpenClaw Bot 管理 LoRaWAN 网关模拟器，并在 **ChirpStack v4** 中管理网关、设备与下行。**一个插件**同时提供模拟器能力与 ChirpStack API 能力，共用同一套 ChirpStack 配置。
 
+## 路径要点（本仓库 LoRaWAN-SIM，开箱前必读）
+
+| 配置项 | 应指向 |
+|--------|--------|
+| OpenClaw 插件 `plugins.entries.*.path` | **`<克隆路径>/simulator/openclaw-lorawan-sim`**（插件包目录，不是仓库根） |
+| `projectPath` / `LORAWAN_SIM_PROJECT_PATH` | **`<克隆路径>/simulator`**（与 `index.js` 同目录）；**或**直接填 **`<克隆路径>`**（Git 仓库根），插件 **自动解析** 到 `simulator/`（见 `resolveSimulatorRoot`） |
+
+配置文件参数里的 `configPath`（如 `configs/config.json`）均**相对于解析后的模拟器目录**（即上面的 `simulator/`）。
+
+**`plugins.entries` 最小示例**：仓库内 [`docs/openclaw.plugins.entries.example.json`](../../docs/openclaw.plugins.entries.example.json)。
+
 ---
 
 ## 功能清单
@@ -15,7 +26,8 @@
 | `lorawan_sim_stop` | 停止模拟器；传 configPath 只停该实例，不传则停全部 | 是 |
 | `lorawan_sim_config_get` | 读取指定配置文件内容 | 否（只读） |
 | `lorawan_sim_config_list` | 列出 configs 目录下所有 JSON 配置 | 否（只读） |
-| `lorawan_sim_config_set` | 按点号路径或 merge 对象更新配置 | 是 |
+| `lorawan_sim_config_validate` | JSON Schema + 场景规则校验；返回 `normalizedPreview`（脱敏）与 `checklistId`（与 ChirpStack 核对表对齐） | 否（只读） |
+| `lorawan_sim_config_set` | 按点号路径或 merge 对象更新配置；可选 `validate_before_write` + `validate_profile` | 是 |
 | `lorawan_sim_uplink_payload_set` | 设置/恢复上行自定义负载；可选 device_name/device_index 只改某设备（需 config.devices） | 是 |
 | `lorawan_sim_reset_device` | 调用控制接口重置设备（需开启 controlServer） | 是 |
 | `lorawan_sim_sync_from_chirpstack` | 从 ChirpStack 拉取设备列表并写入模拟器 CSV/配置 | 是 |
@@ -93,7 +105,7 @@ openclaw onboard
 ### 2. 安装本插件
 
 **方式 A：本地目录加载（推荐）**  
-在 OpenClaw 配置中指定插件路径为项目根目录下的 `openclaw-lorawan-sim`。
+在 OpenClaw 配置中指定插件路径为 **`simulator/openclaw-lorawan-sim`** 的绝对路径（见上文「路径要点」）。
 
 **方式 B：npm link**
 
@@ -108,7 +120,7 @@ npm link
 
 | 配置项 | 说明 | 环境变量 |
 |--------|------|----------|
-| `projectPath` | 模拟器项目根目录绝对路径（模拟器工具必填；仅用 ChirpStack 可不填） | `LORAWAN_SIM_PROJECT_PATH` |
+| `projectPath` | 模拟器运行目录绝对路径：`<克隆>/simulator` 或 `<克隆>` 根（自动落到 `simulator/`）；模拟器工具必填 | `LORAWAN_SIM_PROJECT_PATH` |
 | `chirpstackBaseUrl` | ChirpStack REST 代理地址，如 `http://127.0.0.1:8090` | `CHIRPSTACK_API_URL` |
 | `chirpstackApiToken` | ChirpStack API 密钥 | `CHIRPSTACK_API_TOKEN` |
 | `chirpstackApplicationId` | 默认应用 ID（同步/列设备/创建设备） | `CHIRPSTACK_APPLICATION_ID` |
@@ -122,9 +134,9 @@ npm link
   "plugins": {
     "entries": {
       "lorawan_sim": {
-        "path": "/path/to/lorawan_gateway_sim/openclaw-lorawan-sim",
+        "path": "/path/to/LoRaWAN-SIM/simulator/openclaw-lorawan-sim",
         "config": {
-          "projectPath": "/path/to/lorawan_gateway_sim",
+          "projectPath": "/path/to/LoRaWAN-SIM/simulator",
           "chirpstackBaseUrl": "http://127.0.0.1:8090",
           "chirpstackApiToken": "your-api-key",
           "chirpstackApplicationId": "your-application-uuid",
@@ -230,8 +242,14 @@ Bot 通过 **lorawan_sim_config_set**（点号 path/value 或 merge 对象）和
 - 模拟器配置中开启控制接口：`"controlServer": { "enabled": true, "port": 9999 }`。
 - 模拟器已通过 **lorawan_sim_start** 或手动方式运行；再通过 **lorawan_sim_reset_device**（可选 devEui）重置 OTAA 会话或 ABP FCnt。
 
-### 13. 验收与排障
+### 13. 发布与兼容性（ClawHub / npm）
+
+- **Node.js**：`package.json` 声明 `engines.node` 为 **>=18**（仓库 CI 使用 Node 20 做语法检查）。
+- **OpenClaw 宿主**：`peerDependencies.openclaw` 声明 **>=0.1.0**（可选依赖，避免在未装全局 `openclaw` 的目录 `npm install` 时报硬错误）。实际以你安装的 `openclaw` / `openclaw-cn` CLI 为准；若 ClawHub 对插件有更低版本要求，以 ClawHub 文档为准。
+- 使用 **中文版 CLI** 时，宿主仍须暴露与 OpenClaw 一致的插件 API（`api.registerTool` 等）。
+
+### 14. 验收与排障
 
 - 运行 `openclaw status --deep` 确认插件与策略已加载；运行 `openclaw doctor` 做健康检查。
-- 「未配置模拟器项目路径」：检查 `projectPath` 或 `LORAWAN_SIM_PROJECT_PATH` 是否指向项目根目录。
+- 「未配置模拟器项目路径」：检查 `projectPath` 或 `LORAWAN_SIM_PROJECT_PATH` 是否指向 **`simulator` 目录或仓库根**（见本文顶部「路径要点」）。
 - ChirpStack 工具报错：检查 `chirpstackBaseUrl`、`chirpstackApiToken` 及各默认 ID 是否正确；确认 chirpstack-rest-api 已启动且可访问。

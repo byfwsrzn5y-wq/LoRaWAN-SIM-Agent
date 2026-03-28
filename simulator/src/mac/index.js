@@ -3,6 +3,8 @@
  * LoRaWAN MAC command parser and response generator
  */
 
+const { linkAdrChannelMaskAck, linkAdrAppliedChannelMask } = require('../utils');
+
 // MAC Command definitions
 const MAC_COMMANDS = {
   0x02: { name: 'LinkCheckAns', length: 2 },
@@ -114,12 +116,25 @@ function generateMacResponses(commands, device) {
           let statusByte = 0x00;
           if (dataRate >= 0 && dataRate <= 5) statusByte |= 0x02;
           if (txPower >= 0 && txPower <= 7) statusByte |= 0x04;
-          if (chMaskCntl === 0 && (chMask & 0xFF00) === 0 && chMask !== 0) statusByte |= 0x01;
+          if (linkAdrChannelMaskAck(chMask, chMaskCntl)) statusByte |= 0x01;
+
+          if (process.env.LORASIM_DEBUG_MAC === '1') {
+            const channelAck = (statusByte & 0x01) !== 0;
+            const drAck = (statusByte & 0x02) !== 0;
+            const txPowerAck = (statusByte & 0x04) !== 0;
+            console.log(
+              `[LORASIM_DEBUG_MAC] LinkADRReq->LinkADRAns DR=${dataRate} TxPower=${txPower} ` +
+              `chMask=0x${chMask.toString(16).padStart(4, '0')} chMaskCntl=${chMaskCntl} ` +
+              `redundancy=0x${redundancy.toString(16).padStart(2, '0')} nbTrans=${nbTrans} ` +
+              `statusByte=0x${statusByte.toString(16).padStart(2, '0')} ` +
+              `channel_ack=${channelAck} dr_offset_ack=${drAck} tx_power_ack=${txPowerAck}`
+            );
+          }
           
           if (statusByte === 0x07) {
             device.macParams.dataRate = dataRate;
             device.macParams.txPower = txPower;
-            device.macParams.channelMask = chMask;
+            device.macParams.channelMask = linkAdrAppliedChannelMask(chMask, chMaskCntl);
             device.macParams.nbTrans = nbTrans;
           }
           response = { cid: 0x03, name: 'LinkADRAns', payload: Buffer.from([statusByte]) };
@@ -132,17 +147,30 @@ function generateMacResponses(commands, device) {
         if (cmd.payload && cmd.payload.length >= 4) {
           const rx1DROffset = (cmd.payload[0] >> 4) & 0x07;
           const rx2DataRate = cmd.payload[0] & 0x0F;
-          const rx2Frequency = (cmd.payload[1] | (cmd.payload[2] << 8) | (cmd.payload[3] << 16)) * 100;
+          const rx2FrequencyRaw = (cmd.payload[1] | (cmd.payload[2] << 8) | (cmd.payload[3] << 16));
+          const rx2Frequency = rx2FrequencyRaw * 100;
+          const rx2FrequencyIsDefault = rx2FrequencyRaw === 0;
           
           let statusByte = 0x00;
           if (rx1DROffset >= 0 && rx1DROffset <= 7) statusByte |= 0x04;
           if (rx2DataRate >= 0 && rx2DataRate <= 7) statusByte |= 0x02;
-          if (rx2Frequency >= 915000000 && rx2Frequency <= 928000000) statusByte |= 0x01;
+          if (rx2FrequencyIsDefault || (rx2Frequency >= 915000000 && rx2Frequency <= 928000000)) statusByte |= 0x01;
+
+          if (process.env.LORASIM_DEBUG_MAC === '1') {
+            const rx2FreqAck = (statusByte & 0x01) !== 0;
+            console.log(
+              `[LORASIM_DEBUG_MAC] RXParamSetupReq->RXParamSetupAns rx1DROffset=${rx1DROffset} rx2DataRate=${rx2DataRate} ` +
+              `rx2FrequencyRaw=0x${rx2FrequencyRaw.toString(16)} rx2Frequency=${rx2Frequency} statusByte=0x${statusByte.toString(16).padStart(2, '0')} ` +
+              `rx2_freq_ack=${rx2FreqAck}`
+            );
+          }
           
           if (statusByte === 0x07) {
             device.macParams.rx1DROffset = rx1DROffset;
             device.macParams.rx2DataRate = rx2DataRate;
-            device.macParams.rx2Frequency = rx2Frequency;
+            // rx2FrequencyRaw==0 means "use default" for ChirpStack tooling;
+            // do not overwrite with 0.
+            if (!rx2FrequencyIsDefault) device.macParams.rx2Frequency = rx2Frequency;
           }
           response = { cid: 0x05, name: 'RXParamSetupAns', payload: Buffer.from([statusByte]) };
         } else {

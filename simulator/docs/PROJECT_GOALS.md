@@ -23,7 +23,7 @@
 
 ## 文档索引
 
-完整文档列表与分类见 **[docs/README.md](README.md)**。
+仓库级文档索引（UI 契约、异常、配置速查等）见 **[`docs/README.md`](../../docs/README.md)**；本目录中文分类索引见 **[`README.md`](README.md)**。
 
 - 入门：[使用指南](使用指南.md)
 - 协议与 MAC：[LoRaWAN 1.0.3 与 MAC 交互](LoRaWAN1.0.3与MAC交互.md)、[OTAA 入网与 MAC 命令测试](MAC协议支持与OTAA测试.md)

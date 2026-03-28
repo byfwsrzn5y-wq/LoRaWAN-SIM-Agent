@@ -1,0 +1,453 @@
+{
+  "name": "default",
+  "savedAt": "2026-03-28T23:04:36.992Z",
+  "devices": [
+    {
+      "name": "sim-node-0001",
+      "enabled": true,
+      "mode": "otaa",
+      "devEui": "18D3BF0000000001",
+      "appKey": "",
+      "interval": 10,
+      "fPort": 2,
+      "location": {
+        "x": 541.62890625,
+        "y": 344,
+        "z": 2
+      },
+      "adr": true,
+      "adrReject": false,
+      "devStatus": false,
+      "duplicateFirstData": false,
+      "anomaly": {
+        "enabled": false,
+        "scenario": "fcnt-duplicate",
+        "trigger": "always",
+        "params": {}
+      },
+      "uplink": {
+        "codec": "simple"
+      },
+      "dataRate": 7,
+      "txPower": 16
+    },
+    {
+      "name": "sim-node-0002",
+      "enabled": true,
+      "mode": "otaa",
+      "devEui": "18D3BF0000000002",
+      "appKey": "",
+      "interval": 10,
+      "fPort": 2,
+      "location": {
+        "x": 817.31640625,
+        "y": 680.1875,
+        "z": 2
+      },
+      "adr": true,
+      "adrReject": false,
+      "devStatus": false,
+      "duplicateFirstData": false,
+      "anomaly": {
+        "enabled": false,
+        "scenario": "fcnt-duplicate",
+        "trigger": "always",
+        "params": {}
+      },
+      "uplink": {
+        "codec": "simple"
+      },
+      "dataRate": 7,
+      "txPower": 16
+    },
+    {
+      "name": "sim-node-0003",
+      "enabled": true,
+      "mode": "otaa",
+      "devEui": "18D3BF0000000003",
+      "appKey": "",
+      "interval": 10,
+      "fPort": 2,
+      "location": {
+        "x": 164.87890625,
+        "y": 825.25,
+        "z": 2
+      },
+      "adr": true,
+      "adrReject": false,
+      "devStatus": false,
+      "duplicateFirstData": false,
+      "anomaly": {
+        "enabled": false,
+        "scenario": "fcnt-duplicate",
+        "trigger": "always",
+        "params": {}
+      },
+      "uplink": {
+        "codec": "simple"
+      },
+      "dataRate": 7,
+      "txPower": 16
+    },
+    {
+      "name": "sim-node-0004",
+      "enabled": true,
+      "mode": "otaa",
+      "devEui": "18D3BF0000000004",
+      "appKey": "",
+      "interval": 10,
+      "fPort": 2,
+      "location": {
+        "x": 719,
+        "y": 851.375,
+        "z": 2
+      },
+      "adr": true,
+      "adrReject": false,
+      "devStatus": false,
+      "duplicateFirstData": false,
+      "anomaly": {
+        "enabled": false,
+        "scenario": "fcnt-duplicate",
+        "trigger": "always",
+        "params": {}
+      },
+      "uplink": {
+        "codec": "simple"
+      },
+      "dataRate": 7,
+      "txPower": 16
+    },
+    {
+      "name": "sim-node-0005",
+      "enabled": true,
+      "mode": "otaa",
+      "devEui": "18D3BF0000000005",
+      "appKey": "",
+      "interval": 10,
+      "fPort": 2,
+      "location": {
+        "x": 334.00390625,
+        "y": 850,
+        "z": 2
+      },
+      "adr": true,
+      "adrReject": false,
+      "devStatus": false,
+      "duplicateFirstData": false,
+      "anomaly": {
+        "enabled": false,
+        "scenario": "fcnt-duplicate",
+        "trigger": "always",
+        "params": {}
+      },
+      "uplink": {
+        "codec": "simple"
+      },
+      "dataRate": 7,
+      "txPower": 16
+    },
+    {
+      "name": "sim-node-0006",
+      "enabled": true,
+      "mode": "otaa",
+      "devEui": "18D3BF0000000006",
+      "appKey": "",
+      "interval": 10,
+      "fPort": 2,
+      "location": {
+        "x": 732.06640625,
+        "y": 542,
+        "z": 2
+      },
+      "adr": true,
+      "adrReject": false,
+      "devStatus": false,
+      "duplicateFirstData": false,
+      "anomaly": {
+        "enabled": false,
+        "scenario": "fcnt-duplicate",
+        "trigger": "always",
+        "params": {}
+      },
+      "uplink": {
+        "codec": "simple"
+      },
+      "dataRate": 7,
+      "txPower": 16
+    },
+    {
+      "name": "sim-node-0007",
+      "enabled": true,
+      "mode": "otaa",
+      "devEui": "18D3BF0000000007",
+      "appKey": "",
+      "interval": 10,
+      "fPort": 2,
+      "location": {
+        "x": 723.12890625,
+        "y": 139.8125,
+        "z": 2
+      },
+      "adr": true,
+      "adrReject": false,
+      "devStatus": false,
+      "duplicateFirstData": false,
+      "anomaly": {
+        "enabled": false,
+        "scenario": "fcnt-duplicate",
+        "trigger": "always",
+        "params": {}
+      },
+      "uplink": {
+        "codec": "simple"
+      },
+      "dataRate": 7,
+      "txPower": 16
+    },
+    {
+      "name": "sim-node-0008",
+      "enabled": true,
+      "mode": "otaa",
+      "devEui": "18D3BF0000000008",
+      "appKey": "",
+      "interval": 10,
+      "fPort": 2,
+      "location": {
+        "x": 377.31640625,
+        "y": 155.625,
+        "z": 2
+      },
+      "adr": true,
+      "adrReject": false,
+      "devStatus": false,
+      "duplicateFirstData": false,
+      "anomaly": {
+        "enabled": false,
+        "scenario": "fcnt-duplicate",
+        "trigger": "always",
+        "params": {}
+      },
+      "uplink": {
+        "codec": "simple"
+      },
+      "dataRate": 7,
+      "txPower": 16
+    },
+    {
+      "name": "sim-node-0009",
+      "enabled": true,
+      "mode": "otaa",
+      "devEui": "18D3BF0000000009",
+      "appKey": "",
+      "interval": 10,
+      "fPort": 2,
+      "location": {
+        "x": 129.12890625,
+        "y": 277.3125,
+        "z": 2
+      },
+      "adr": true,
+      "adrReject": false,
+      "devStatus": false,
+      "duplicateFirstData": false,
+      "anomaly": {
+        "enabled": false,
+        "scenario": "fcnt-duplicate",
+        "trigger": "always",
+        "params": {}
+      },
+      "uplink": {
+        "codec": "simple"
+      },
+      "dataRate": 7,
+      "txPower": 16
+    },
+    {
+      "name": "sim-node-000a",
+      "enabled": true,
+      "mode": "otaa",
+      "devEui": "18D3BF000000000A",
+      "appKey": "",
+      "interval": 10,
+      "fPort": 2,
+      "location": {
+        "x": 118.12890625,
+        "y": 603.1875,
+        "z": 2
+      },
+      "adr": true,
+      "adrReject": false,
+      "devStatus": false,
+      "duplicateFirstData": false,
+      "anomaly": {
+        "enabled": true,
+        "scenario": "signal-weak",
+        "trigger": "always",
+        "params": {}
+      },
+      "uplink": {
+        "codec": "simple"
+      },
+      "dataRate": 7,
+      "txPower": 16
+    }
+  ],
+  "multiGateway": {
+    "enabled": true,
+    "mode": "overlapping",
+    "primaryGateway": "19023c6b00000000",
+    "gateways": [
+      {
+        "eui": "19023c6b00000000",
+        "name": "gw-apex-sw",
+        "position": {
+          "x": 340.6328125,
+          "y": 455.4375,
+          "z": 30
+        },
+        "rxGain": 5,
+        "rxSensitivity": -137,
+        "cableLoss": 0.5,
+        "syncStatus": {
+          "state": "synced",
+          "targets": [
+            "chirpstack",
+            "simulator"
+          ],
+          "lastError": null,
+          "updatedAt": "2026-03-28T07:10:23.234Z"
+        }
+      },
+      {
+        "eui": "19023c6b00000001",
+        "name": "gw-apex-se",
+        "position": {
+          "x": 770.6328125,
+          "y": 335.125,
+          "z": 30
+        },
+        "rxGain": 5,
+        "rxSensitivity": -137,
+        "cableLoss": 0.5,
+        "syncStatus": {
+          "state": "synced",
+          "targets": [
+            "chirpstack",
+            "simulator"
+          ],
+          "lastError": null,
+          "updatedAt": "2026-03-28T07:10:25.918Z"
+        }
+      },
+      {
+        "eui": "19023c6b00000002",
+        "name": "gw-apex-north",
+        "position": {
+          "x": 482.7578125,
+          "y": 661.4175,
+          "z": 30
+        },
+        "rxGain": 5,
+        "rxSensitivity": -137,
+        "cableLoss": 0.5,
+        "syncStatus": {
+          "state": "synced",
+          "targets": [
+            "chirpstack",
+            "simulator"
+          ],
+          "lastError": null,
+          "updatedAt": "2026-03-28T07:10:20.940Z"
+        },
+        "noiseFloor": -100
+      }
+    ]
+  },
+  "signalModel": {
+    "enabled": true,
+    "nodePosition": {
+      "x": 700,
+      "y": 446,
+      "z": 2
+    },
+    "gatewayPosition": {
+      "x": 700,
+      "y": 446,
+      "z": 30
+    },
+    "environment": "urban",
+    "txPower": 16,
+    "txGain": 2.15,
+    "rxGain": 5,
+    "cableLoss": 0.5,
+    "noiseFloor": -120,
+    "shadowFadingStd": 8,
+    "fastFadingEnabled": true,
+    "timeVariation": true
+  },
+  "uplink": {
+    "enabled": true,
+    "intervalMs": 10000,
+    "scatterMode": "random",
+    "codec": "simple",
+    "payloadLength": 5,
+    "interval": 10000,
+    "lorawan": {
+      "fPort": 2
+    },
+    "fPort": 2
+  },
+  "simulation": {
+    "duration": 120,
+    "autoStart": true,
+    "gateway": {
+      "gatewayEui": "19023c6b00000000",
+      "address": "10.0.0.3",
+      "port": 1702
+    },
+    "region": "AS923",
+    "logLevel": "info",
+    "resetOtaaOnStart": true
+  },
+  "lorawan": {
+    "enabled": true,
+    "joinEnabled": true,
+    "region": "AS923",
+    "macVersion": "LORAWAN_1_0_4",
+    "activation": "OTAA",
+    "deviceCount": 5,
+    "appEuiStart": "0000000000000000",
+    "appKey": "00112233445566778899AABBCCDDEEFF",
+    "devEuiStart": "18d3bf0000000000",
+    "csvImportPath": "configs/otaa-100-devices.csv"
+  },
+  "chirpstack": {
+    "baseUrl": "http://10.0.0.3:8090",
+    "authHeader": "Grpc-Metadata-Authorization",
+    "applicationId": "540a999c-9eeb-4c5c-bed1-778dacddaf46",
+    "deviceProfileId": "a1b2c3d4-1111-2222-3333-444444444444",
+    "tenantId": "81d48efb-6216-4c7f-8c21-46a5eac9d737",
+    "topologyEnabled": false,
+    "inventoryPollSec": 60,
+    "rxStalenessSec": 120,
+    "integrationMqtt": {
+      "enabled": true,
+      "server": "",
+      "username": ""
+    }
+  },
+  "gatewayEui": "19023c6b00000000",
+  "lnsHost": "10.0.0.3",
+  "lnsPort": 1702,
+  "udpBindPort": 0,
+  "mqtt": {
+    "enabled": false
+  },
+  "controlServer": {
+    "enabled": true,
+    "port": 9999,
+    "host": "127.0.0.1"
+  },
+  "control": {}
+}

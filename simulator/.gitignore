@@ -20,3 +20,14 @@ configs/synced-from-chirpstack.csv
 
 # Optional: keep synced CSV if you want to commit it
 # !configs/synced-from-chirpstack.csv
+
+# Local notes / experiments
+../memory/
+
+# Local simulator run artifacts (do not commit)
+configs/config-explicit-active-*.json
+*anomaly-test*report*.json
+v3-e2e-test-result.json
+
+# Front-end build output (optional, but keep safe)
+visualizer/dist/

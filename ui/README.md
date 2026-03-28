@@ -27,13 +27,23 @@ Vite proxies API paths to `VITE_CONTROL_PROXY_TARGET` (default `http://127.0.0.1
 
 The UI calls:
 
-- `GET /sim-state` — snapshot for lists and canvas
+- `GET /sim-state` — snapshot for lists and canvas（启用 ChirpStack 拓扑时响应中含合并后的 `nodes`/`gateways`、`topologyDisplayEnabled`、`chirpstackInventory` 等，见仓库 [`schemas/sim-state-v1.schema.json`](../schemas/sim-state-v1.schema.json)）
 - `POST /resources/nodes`, `PATCH /resources/nodes/:devEui`
 - `POST /resources/gateways`, `PATCH /resources/gateways/:gatewayId`
-- `POST /layout/apply` — after drag (debounced)
+- `PATCH /resources/simulation` — Scenario 表单（含 `chirpstack` 下的 `topologyEnabled`、`inventoryPollSec`、`rxStalenessSec`、`applicationIds`、`integrationMqtt` 等）
+- `POST /layout/apply` — after drag (debounced)；CS 仅存在实体时坐标写入服务端 `topologyOverlay`
+- `POST /chirpstack/refresh-inventory` — 立即从 ChirpStack REST 拉取设备/网关清单（需已配置 token 且启用拓扑）
 - `POST /sync/retry` — manual retry queue
 - `POST /start`, `POST /stop` — optional transport controls
 - `GET/POST /config-profiles*` — profile list/save/load/apply/rename
+
+Dev 代理（Vite）除上述路径外，还代理 `^/chirpstack` 与 `^/topology`（见 [`vite.config.ts`](vite.config.ts)）。
+
+### ChirpStack 拓扑（UI 行为摘要）
+
+- **Scenario**：展开 **ChirpStack 拓扑（UI 画布）**，勾选 `topologyEnabled` 并填写轮询间隔、rx 过期时间、多 `applicationIds`（可选）、UDP 场景下的 `integrationMqtt` 等。**保存后**若修改 `inventoryPollSec`，需**重启模拟器**定时器才按新间隔拉取；可先使用左栏 **刷新** 立即同步清单。
+- **顶栏**：显示 **CS 拓扑** 表示当前 `GET /sim-state` 已合并 ChirpStack 视图。
+- **左栏**：**来源** 筛选「全部 / 模拟 / CS」；拓扑启用时显示清单统计、错误信息与 **刷新** 按钮。来自 ChirpStack 的节点/网关 **无 Del**，Inspector 为只读说明。
 
 ## Profile save / refresh troubleshooting
 

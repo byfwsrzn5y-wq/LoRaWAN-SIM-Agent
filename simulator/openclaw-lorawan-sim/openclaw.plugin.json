@@ -13,7 +13,7 @@
       },
       "projectPath": {
         "type": "string",
-        "description": "模拟器项目根目录的绝对路径。建议用 LORAWAN_SIM_PROJECT_PATH 或 configFile 配置，不必写在此处"
+        "description": "模拟器运行目录的绝对路径：须最终能解析到含有 index.js 的目录（本仓库为 <克隆>/simulator）。也可填 Git 克隆根目录 <克隆>，插件会自动使用 simulator/ 子目录。建议用 LORAWAN_SIM_PROJECT_PATH 或 configFile"
       },
       "chirpstackBaseUrl": {
         "type": "string",

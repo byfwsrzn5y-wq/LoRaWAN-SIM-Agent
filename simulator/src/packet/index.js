@@ -52,7 +52,18 @@ function deriveSessionKeys(nwkKeyBuf, appEuiBuf, appNonce, netId, devNonce) {
   return { nwkSKey, appSKey };
 }
 
-function buildLorawanUplinkAbp({ nwkSKey, appSKey, devAddr, fCntUp, fPort, confirmed, payload, macCommands, ackDownlink }) {
+function buildLorawanUplinkAbp({
+  nwkSKey,
+  appSKey,
+  devAddr,
+  fCntUp,
+  fPort,
+  confirmed,
+  payload,
+  macCommands,
+  ackDownlink,
+  adr = true,
+}) {
   const MHDR = Buffer.from([confirmed ? 0x80 : 0x40]);
 
   let FOpts = Buffer.alloc(0);
@@ -64,7 +75,7 @@ function buildLorawanUplinkAbp({ nwkSKey, appSKey, devAddr, fCntUp, fPort, confi
 
   let fctrlByte = FOpts.length & 0x0f;
   if (ackDownlink) fctrlByte |= 0x20;
-  fctrlByte |= 0x80;
+  if (adr) fctrlByte |= 0x80;
   const FCtrl = Buffer.from([fctrlByte]);
   const fCnt16 = fCntUp & 0xffff;
   const FCnt = Buffer.from([fCnt16 & 0xff, (fCnt16 >> 8) & 0xff]);

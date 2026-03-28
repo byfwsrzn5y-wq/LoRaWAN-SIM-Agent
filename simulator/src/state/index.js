@@ -1,14 +1,19 @@
 /**
  * State Manager Module
- * Simulation state export for visualizer
+ * Simulation state export for local debugging/tools
  */
 
 const fs = require('fs');
 const path = require('path');
 
+/** Default state file is `simulator/sim-state.json`, not process.cwd(). */
+function defaultStateFile() {
+  return path.join(__dirname, '..', '..', 'sim-state.json');
+}
+
 class StateManager {
   constructor(stateFilePath) {
-    this.stateFile = stateFilePath || path.join(process.cwd(), 'sim-state.json');
+    this.stateFile = stateFilePath || defaultStateFile();
     this.state = {
       running: false,
       gateways: [],

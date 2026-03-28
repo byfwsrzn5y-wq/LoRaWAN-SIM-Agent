@@ -1,0 +1,9 @@
+{
+  "_comment": "粘贴到 openclaw.json / agents.json5 的 plugins.entries 中；替换 ABSOLUTE_PATH 与密钥",
+  "lorawan_sim": {
+    "path": "ABSOLUTE_PATH/LoRaWAN-SIM/simulator/openclaw-lorawan-sim",
+    "config": {
+      "configFile": "~/.openclaw/lorawan-sim.json"
+    }
+  }
+}

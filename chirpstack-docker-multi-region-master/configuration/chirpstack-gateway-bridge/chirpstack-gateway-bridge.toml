@@ -5,3 +5,29 @@
 servers=["tcp://mosquitto:1883"]
 username=""
 password=""
+
+[integration.mqtt]
+# MQTT topic templates
+# Event topic template (gateway -> network-server)
+event_topic_template="as923/gateway/{{ .GatewayID }}/event/{{ .EventType }}"
+
+# Command topic template (network-server -> gateway)
+command_topic_template="as923/gateway/{{ .GatewayID }}/command/#"
+
+# State topic template
+state_topic_template="as923/gateway/{{ .GatewayID }}/state/{{ .StateType }}"
+
+# TLS configuration
+tls_enabled=false
+
+# QoS level (0, 1, 2)
+qos=0
+
+# Clean session
+clean_session=true
+
+# Client ID (empty = auto-generated)
+client_id=""
+
+# Keep alive interval
+keep_alive_interval="30s"

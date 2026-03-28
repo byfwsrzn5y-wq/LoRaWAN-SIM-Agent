@@ -21,7 +21,7 @@ ssh -o StrictHostKeyChecking=no rak@10.5.40.109
 | 组件 | 地址 | 说明 |
 |------|------|------|
 | API | http://10.5.40.109:8090/api | 需 Bearer Token |
-| Gateway Bridge | 127.0.0.1:1702 (UDP) | AS923 区域 |
+| Gateway Bridge | 10.0.0.3:1702 (UDP) | AS923 区域（Semtech UDP → Bridge） |
 | 应用 ID | a9bede28-bb45-421e-9cfa-5824d27a4133 | 测试应用 |
 | Device Profile | 85387f55-b6ec-48b8-90c6-aa0fa0f73c0e | LoRaWAN 1.0.3 OTAA |
 

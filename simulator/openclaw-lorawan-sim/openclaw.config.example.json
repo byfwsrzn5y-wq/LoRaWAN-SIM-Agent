@@ -1,0 +1,10 @@
+{
+  "_comment": "可复制为 ~/.openclaw/lorawan-sim.json 并在插件里设置 configFile；请替换为你的绝对路径与真实 UUID/token",
+  "projectPath": "/absolute/path/to/LoRaWAN-SIM/simulator",
+  "chirpstackBaseUrl": "http://127.0.0.1:8090",
+  "chirpstackApiToken": "YOUR_API_TOKEN",
+  "chirpstackApplicationId": "YOUR_APPLICATION_UUID",
+  "chirpstackTenantId": "YOUR_TENANT_UUID",
+  "chirpstackDeviceProfileId": "YOUR_DEVICE_PROFILE_UUID",
+  "chirpstackApiStyle": "rest"
+}

@@ -1,5 +1,6 @@
 // ===============================
 // 异常场景注入模块 - Anomaly Injection Module
+// 单一事实来源（SSOT）：simulator/index.js 通过 require 使用 injectAnomaly。
 // ===============================
 
 const ANOMALY_SCENARIOS = {
@@ -66,10 +67,11 @@ const ANOMALY_SCENARIOS = {
     inject: (device, payload, fCnt, params) => {
       // 返回覆盖值，由调用方处理
       device._anomalyOverride = {
-        rssi: params.rssi || -145,
-        snr: params.snr || -25
+        rssi: params.rssi != null && Number.isFinite(Number(params.rssi)) ? Number(params.rssi) : -145,
+        snr: params.snr != null && Number.isFinite(Number(params.snr)) ? Number(params.snr) : -25
       };
-      console.log(`[ANOMALY] Weak signal for ${device.name}: RSSI=${params.rssi}, SNR=${params.snr}`);
+      const o = device._anomalyOverride;
+      console.log(`[ANOMALY] Weak signal for ${device.name}: RSSI=${o.rssi}, SNR=${o.snr}`);
       return payload;
     }
   },
@@ -91,10 +93,11 @@ const ANOMALY_SCENARIOS = {
   'rapid-join': {
     description: 'Force rejoin shortly after join accept',
     inject: (device, payload, fCnt, params) => {
+      const maxAttempts = Number.isFinite(Number(params.maxAttempts)) ? Number(params.maxAttempts) : 0;
+      if (device._rapidJoinDisabled) return payload;
       if (device.joined && !device._rapidJoinScheduled) {
         device._rapidJoinScheduled = true;
         const delay = params.delayMs || 2000;
-        const maxAttempts = params.maxAttempts || 5;
         
         setTimeout(() => {
           device.joined = false;
@@ -104,9 +107,12 @@ const ANOMALY_SCENARIOS = {
           
           // 递增计数器
           device._rapidJoinCount = (device._rapidJoinCount || 0) + 1;
-          if (device._rapidJoinCount >= maxAttempts) {
-            device._rapidJoinScheduled = false;
-            device._rapidJoinCount = 0;
+          // Always clear scheduling lock so next joined uplink can schedule again.
+          device._rapidJoinScheduled = false;
+          // maxAttempts <= 0 means unlimited rapid-join cycles.
+          if (maxAttempts > 0 && device._rapidJoinCount >= maxAttempts) {
+            device._rapidJoinDisabled = true;
+            console.log(`[ANOMALY] Rapid join stopped for ${device.name}: reached maxAttempts=${maxAttempts}`);
           }
         }, delay);
       }
@@ -145,6 +151,190 @@ const ANOMALY_SCENARIOS = {
         device._dropThisUplink = true;
         console.log(`[ANOMALY] Uplink dropped for ${device.name}`);
       }
+      return payload;
+    }
+  },
+
+  // ========== 新增异常场景 (v3.0 补全) ==========
+
+  // 下行损坏: 损坏下行数据包的MIC或Payload
+  'downlink-corrupt': {
+    description: 'Corrupt downlink packets to test device resilience',
+    inject: (device, payload, fCnt, params) => {
+      // 标记设备应在处理下行时损坏数据
+      device._corruptDownlink = true;
+      device._downlinkCorruptParams = {
+        bitFlip: params.bitFlip || 4,
+        target: params.target || 'mic' // 'mic' | 'payload' | 'both'
+      };
+      console.log(`[ANOMALY] Downlink corrupt enabled for ${device.name}: ${params.target || 'mic'}`);
+      return payload;
+    }
+  },
+
+  // 设备地址冲突: 模拟DevAddr重用/冲突
+  'devaddr-reuse': {
+    description: 'Simulate DevAddr reuse/conflict between devices',
+    inject: (device, payload, fCnt, params) => {
+      const clean = (params.conflictAddr || '0A0B0C0D').replace(/[^a-fA-F0-9]/g, '').slice(-8).padStart(8, '0');
+      device._forceDevAddr = clean;
+      device.devAddrHex = clean;
+      device.devAddr = Buffer.from(clean, 'hex').reverse();
+      console.log(`[ANOMALY] DevAddr reuse for ${device.name}: forced to ${clean}`);
+      return payload;
+    }
+  },
+
+  // 上行突发: 短时间内发送大量上行包
+  'rapid-uplink': {
+    description: 'Rapid burst of uplinks to test rate limiting',
+    inject: (device, payload, fCnt, params) => {
+      if (!device._rapidUplinkActive) {
+        device._rapidUplinkActive = true;
+        device._burstCount = params.burstCount || 10;
+        device._burstInterval = params.burstInterval || 100; // ms
+        device._burstSent = 0;
+        console.log(`[ANOMALY] Rapid uplink burst for ${device.name}: ${device._burstCount} packets at ${device._burstInterval}ms interval`);
+      }
+      return payload;
+    }
+  },
+
+  // 网络延迟: 模拟下行延迟或高延迟响应
+  'network-delay': {
+    description: 'Simulate network delay for downlinks',
+    inject: (device, payload, fCnt, params) => {
+      device._downlinkDelay = params.delayMs || 5000;
+      console.log(`[ANOMALY] Network delay for ${device.name}: ${device._downlinkDelay}ms`);
+      return payload;
+    }
+  },
+
+  // 网关离线: 模拟网关临时不可用
+  'gateway-offline': {
+    description: 'Simulate gateway going offline',
+    inject: (device, payload, fCnt, params) => {
+      if (!device._gatewayOfflineScheduled) {
+        device._gatewayOfflineScheduled = true;
+        const offlineDuration = params.offlineDuration || 300; // seconds
+        const delayBeforeOffline = params.delayBefore || 0;
+
+        setTimeout(() => {
+          device._gatewayOffline = true;
+          device._gatewayOfflineUntil = Date.now() + (offlineDuration * 1000);
+          console.log(`[ANOMALY] Gateway offline for ${device.name}: ${offlineDuration}s`);
+
+          setTimeout(() => {
+            device._gatewayOffline = false;
+            device._gatewayOfflineScheduled = false;
+            console.log(`[ANOMALY] Gateway back online for ${device.name}`);
+          }, offlineDuration * 1000);
+        }, delayBeforeOffline * 1000);
+      }
+      return payload;
+    }
+  },
+
+  // 信号质量持续降级: 模拟信号逐渐恶化
+  'signal-degrade': {
+    description: 'Gradual signal quality degradation over time',
+    inject: (device, payload, fCnt, params) => {
+      if (!device._signalDegradeActive) {
+        device._signalDegradeActive = true;
+        device._degradeRate = params.degradeRate || -2; // dB per uplink
+        device._currentRssiOffset = 0;
+        device._currentSnrOffset = 0;
+        console.log(`[ANOMALY] Signal degrade for ${device.name}: ${device._degradeRate}dB per uplink`);
+      }
+      // 更新偏移量
+      device._currentRssiOffset += device._degradeRate;
+      device._currentSnrOffset += (device._degradeRate * 0.5);
+      device._anomalyOverride = {
+        rssiOffset: device._currentRssiOffset,
+        snrOffset: device._currentSnrOffset
+      };
+      console.log(`[ANOMALY] Signal degrade progress for ${device.name}: RSSI offset ${device._currentRssiOffset}dB`);
+      return payload;
+    }
+  },
+
+  // 异常频率跳变: 不正常的信道切换
+  'freq-hop-abnormal': {
+    description: 'Abnormal frequency hopping pattern',
+    inject: (device, payload, fCnt, params) => {
+      const hopPattern = params.hopPattern || 'random';
+      device._abnormalFreqHop = true;
+      device._freqHopPattern = hopPattern;
+      // 强制使用特定异常频点或跳变模式
+      device._forcedFrequencies = params.forcedFreqs || [
+        923300000, // AS923 频点范围外
+        922000000, // 非标准频点
+        924500000  // 可能冲突的频点
+      ];
+      console.log(`[ANOMALY] Abnormal freq hop for ${device.name}: pattern=${hopPattern}`);
+      return payload;
+    }
+  },
+
+  // 异常SF切换: 不正常的数据率/扩频因子变化
+  'sf-switch-abnormal': {
+    description: 'Abnormal spreading factor switching',
+    inject: (device, payload, fCnt, params) => {
+      const sfPattern = params.sfPattern || 'erratic';
+      device._abnormalSfSwitch = true;
+      device._sfPattern = sfPattern;
+      // 定义异常SF序列 (正常应该是逐渐变化)
+      device._forcedSfSequence = params.forcedSfs || [7, 12, 7, 12, 10]; // 剧烈跳变
+      device._sfSequenceIndex = 0;
+      console.log(`[ANOMALY] Abnormal SF switch for ${device.name}: pattern=${sfPattern}`);
+      return payload;
+    }
+  },
+
+  // 设备时间不同步: 模拟时间漂移
+  'time-desync': {
+    description: 'Device time desynchronization with network',
+    inject: (device, payload, fCnt, params) => {
+      const driftPpm = params.driftPpm || 100; // 100 ppm drift
+      device._timeDrift = true;
+      device._timeDriftRate = driftPpm;
+      device._timeDriftStart = Date.now();
+      console.log(`[ANOMALY] Time desync for ${device.name}: drift=${driftPpm}ppm`);
+      return payload;
+    }
+  },
+
+  // ACK抑制: 选择性丢弃ACK
+  'ack-suppress': {
+    description: 'Selectively suppress ACKs to test confirmed retry',
+    inject: (device, payload, fCnt, params) => {
+      const suppressRate = params.suppressRate || 0.5;
+      device._ackSuppress = true;
+      device._ackSuppressRate = suppressRate;
+      // 随机决定是否抑制本次ACK
+      device._suppressThisAck = Math.random() < suppressRate;
+      console.log(`[ANOMALY] ACK suppress for ${device.name}: rate=${suppressRate}, this=${device._suppressThisAck}`);
+      return payload;
+    }
+  },
+
+  // MAC命令损坏: 损坏MAC层命令
+  'mac-corrupt': {
+    description: 'Corrupt MAC commands in FOpts',
+    inject: (device, payload, fCnt, params) => {
+      const macBitFlip = params.macBitFlip || 2;
+      device._macCorrupt = true;
+      device._macCorruptBits = macBitFlip;
+      // MAC命令通常在FOpts字段 (MHDR之后)
+      const fhdrEnd = 8; // MHDR(1) + DevAddr(4) + FCtrl(1) + FCnt(2)
+      if (payload.length > fhdrEnd + 4) {
+        for (let i = 0; i < macBitFlip; i++) {
+          const byteIdx = fhdrEnd + (i % 4);
+          const bitIdx = Math.floor(Math.random() * 8);
+          payload[byteIdx] ^= (1 << bitIdx);
+        }
+      }
+      console.log(`[ANOMALY] MAC corrupt for ${device.name}: ${macBitFlip} bits in FOpts`);
       return payload;
     }
   }

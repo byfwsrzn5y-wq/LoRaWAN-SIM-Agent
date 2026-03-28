@@ -98,6 +98,7 @@ Schema 提示（编辑器自动完成）：仓库根 [`schemas/lorasim-config.sc
 | 逐台 OTAA（显式 DevEUI 等） | `devices[]`（每项 `lorawan.devEui`、`appKey`、`appEui` 等）；见 `index.js` 设备装载 |
 | 上行周期、payload、fPort | `uplink.intervalMs`（或 `interval`，均按毫秒调度）、`uplink.payloadLength`、`uplink.lorawan.fPort`、`uplink.codec` |
 | 路径损耗 / 发射功率 / 衰落 | `signalModel.*`（`nodePosition` 为批量节点螺旋中心；多网关时用 `gateways[].position` 算距） |
+| 运动轨迹 / 环境分区 / 衍生异常（原 v2） | `devices[].movement`、`environment`（`zones`/`events`）、`derivedAnomalies`；或 `v2DerivedAnomalies: true` 启用默认衍生规则；实现见 [`simulator/src/runtime/motion-environment.js`](../simulator/src/runtime/motion-environment.js) |
 | HTTP 控制 API（OpenClaw 等） | `controlServer.enabled`、`host`、`port` |
 | MQTT 接 Gateway Bridge | `mqtt.enabled`、`server`/`host`+`port`、`topicPrefix` 等（与 UDP 二选一或并存取决于你的 `index.js` 路径） |
 
@@ -150,3 +151,4 @@ node scripts/chirpstack-provision-otaa-from-config.mjs simulator/configs/your-co
 - CLI 覆盖：[`simulator/src/config/cli-overrides.js`](../simulator/src/config/cli-overrides.js)
 - 结构化校验：[`simulator/src/config/validate-config.js`](../simulator/src/config/validate-config.js)
 - 运行时设备与上行：[`simulator/index.js`](../simulator/index.js)
+- 可选运动/环境/衍生异常：[`simulator/src/runtime/motion-environment.js`](../simulator/src/runtime/motion-environment.js)

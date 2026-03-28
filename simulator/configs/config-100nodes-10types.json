@@ -2,7 +2,7 @@
   "description": "随机 100 个节点，仅从指定的 10 种行为中随机匹配（3 正常 + 7 异常），可任意改 deviceCount 与 behaviorTemplateList 种类数",
   "gatewayEui": "0102030405060708",
   "lnsHost": "127.0.0.1",
-  "lnsPort": 1700,
+  "lnsPort": 1702,
   "mqtt": {
     "enabled": true,
     "server": "tcp://127.0.0.1:1883",
@@ -10,6 +10,7 @@
     "clean": true,
     "qos": 0,
     "marshaler": "protobuf",
+    "mqttTopicPrefix": "as923",
     "topicPrefix": "as923"
   },
   "lorawan": {

@@ -2,6 +2,8 @@
 
 本文档提供 LoRaWAN-SIM 项目中 18 种异常类型的检测规则草稿，用于网络监控和告警系统设计。
 
+**配套**：异常 ID、空口契约与 ChirpStack 响应速查见 [`ANOMALY_RESPONSE.md`](ANOMALY_RESPONSE.md)。
+
 ---
 
 ## 已验证异常的检测规则

@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "lorawan-sim:sim-state-v1",
+  "title": "LoRaWAN-SIM sim-state v1",
+  "description": "Written by simulator/index.js to sim-state.json for local debugging/tools. Bump schemaVersion in code when breaking fields change.",
+  "type": "object",
+  "required": ["schemaVersion"],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "description": "Structural version; current simulator writes 1."
+    },
+    "running": { "type": "boolean" },
+    "gateways": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "eui": { "type": "string" },
+          "name": { "type": "string" },
+          "position": {
+            "type": "object",
+            "properties": {
+              "x": { "type": "number" },
+              "y": { "type": "number" },
+              "z": { "type": "number" }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "eui": { "type": "string" },
+          "name": { "type": "string" },
+          "devAddr": { "type": "string" },
+          "fCnt": { "type": "integer" },
+          "joined": { "type": "boolean" },
+          "rssi": { "type": "number" },
+          "snr": { "type": "number" },
+          "uplinks": { "type": "integer" },
+          "position": { "type": "object", "additionalProperties": true },
+          "lastSeen": { "type": ["string", "null"] },
+          "lastPayload": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "stats": {
+      "type": "object",
+      "properties": {
+        "uplinks": { "type": "integer" },
+        "joins": { "type": "integer" },
+        "errors": { "type": "integer" }
+      },
+      "additionalProperties": true
+    },
+    "config": {
+      "type": "object",
+      "properties": {
+        "loadedConfigPath": { "type": "string" },
+        "signalModel": { "type": "object", "additionalProperties": true },
+        "multiGateway": { "type": "object", "additionalProperties": true }
+      },
+      "additionalProperties": true
+    },
+    "lastUpdate": { "type": ["string", "null"] },
+    "packetLog": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "nodeId": { "type": "string" },
+          "time": { "type": "string" },
+          "type": { "type": "string" },
+          "rssi": { "type": "number" },
+          "snr": { "type": "number" },
+          "payload": { "type": "string" },
+          "status": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "topologyOverlay": {
+      "type": "object",
+      "description": "Canvas positions for ChirpStack-only nodes/gateways (lowercase 16-hex EUI keys).",
+      "properties": {
+        "nodes": { "type": "object", "additionalProperties": true },
+        "gateways": { "type": "object", "additionalProperties": true }
+      },
+      "additionalProperties": true
+    },
+    "chirpstackInventory": {
+      "type": "object",
+      "description": "Last REST snapshot from ChirpStack for topology merge.",
+      "additionalProperties": true
+    },
+    "chirpstackLiveRx": {
+      "type": "object",
+      "description": "Per-device gateway receptions from MQTT integration rxInfo.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

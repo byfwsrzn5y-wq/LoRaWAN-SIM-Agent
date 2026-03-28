@@ -63,7 +63,6 @@
 诊断 / 检查 / 网络健康
 配置 / 选项
 帮助 / 怎么用
-可视化 / 地图 / 界面
 重置 / 清除
 ```
 
@@ -107,7 +106,6 @@ export DISCORD_TOKEN="your-bot-token"
 export SIMULATOR_PATH="/path/to/LoRaWAN-SIM/simulator"
 export CHIRPSTACK_API="http://10.5.40.109:8090/api"
 export CHIRPSTACK_TOKEN="your-api-token"
-export VISUALIZER_PORT="3030"
 export CONTROL_PORT="9999"
 ```
 
@@ -115,7 +113,7 @@ export CONTROL_PORT="9999"
 
 ```env
 DISCORD_TOKEN=your-bot-token
-SIMULATOR_PATH=/Users/natsuifufei/Library/Mobile Documents/com~apple~CloudDocs/LoRaWAN-SIM/simulator
+SIMULATOR_PATH=/path/to/LoRaWAN-SIM/simulator
 CHIRPSTACK_API=http://10.5.40.109:8090/api
 ```
 
@@ -136,9 +134,8 @@ npm run dev
 ```
 📡 模拟器已启动
 
-• 配置: example-multi-gateway.json
+• 配置: example-multi-gateway.json（相对 simulator/configs/）
 • 节点: 配置文件定义
-• 可视化: http://localhost:3030
 ```
 
 ---
@@ -150,11 +147,10 @@ npm run dev
 🟢 模拟器状态
 
 • 状态: 运行中
-• 配置: example-multi-gateway.json
+• 配置: example-multi-gateway.json（相对 simulator/configs/）
 • 运行时长: 120秒
 • 节点数: 5
 • 上行计数: 45
-• 可视化: 运行中
 ```
 
 ---
@@ -224,7 +220,7 @@ Discord Bot
     │
     ├── /sim-start ──────► 启动 simulator/index.js
     │
-    ├── /sim-status ─────► GET http://localhost:3030/api/state
+    ├── /sim-status ─────► 读取 simulator/sim-state.json
     │
     ├── /sim-anomaly ────► POST http://localhost:9999/anomaly
     │

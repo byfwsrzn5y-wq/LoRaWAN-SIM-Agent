@@ -4,7 +4,7 @@
   "description": "LoRaWAN gateway simulator for ChirpStack — uplink/downlink via Gateway Bridge (MQTT/UDP), OTAA/ABP, MAC commands",
   "main": "index.js",
   "scripts": {
-    "ci:check": "node --check index.js && node --check main.js && node --check signal_model.js && node --check anomaly_module.js && node --check src/config/v20-normalize.js && node --check src/config/cli-overrides.js && node --check src/config/validate-config.js && node --check src/config/profiles.js",
+    "ci:check": "node --check index.js && node --check main.js && node --check signal_model.js && node --check anomaly_module.js && node --check src/runtime/motion-environment.js && node --check src/config/v20-normalize.js && node --check src/config/cli-overrides.js && node --check src/config/validate-config.js && node --check src/config/profiles.js",
     "start": "node index.js",
     "start:config": "node index.js -c configs/config.json",
     "start:100": "node index.js -c configs/config-100nodes-10types.json",
@@ -16,9 +16,10 @@
     "sim:cs:gw:apply": "node ../scripts/lorasim-cli.mjs cs-gw-apply",
     "sim:cs:dev:dry": "node ../scripts/lorasim-cli.mjs cs-dev-dry",
     "sim:cs:dev:apply": "node ../scripts/lorasim-cli.mjs cs-dev-apply",
-    "ensure-gateways": "node ../scripts/chirpstack-ensure-gateways-from-config.mjs simulator/config.json",
-    "ensure-gateways:check": "node ../scripts/chirpstack-ensure-gateways-from-config.mjs --check-only simulator/config.json",
-    "validate-config": "node ../scripts/lorasim-config-validate.mjs -c config.json --profile v20-udp"
+    "ensure-gateways": "node ../scripts/chirpstack-ensure-gateways-from-config.mjs config.json",
+    "ensure-gateways:check": "node ../scripts/chirpstack-ensure-gateways-from-config.mjs --check-only config.json",
+    "validate-config": "node ../scripts/lorasim-config-validate.mjs -c config.json --profile v20-udp",
+    "test": "node tests/orchestrator.test.js && node tests/chirpstack-rxinfo.test.js"
   },
   "keywords": ["lorawan", "chirpstack", "gateway", "simulator"],
   "license": "MIT",

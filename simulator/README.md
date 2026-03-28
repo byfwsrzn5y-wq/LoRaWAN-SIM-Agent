@@ -7,11 +7,9 @@
 | 入口 | 命令 | 说明 |
 |------|------|------|
 | **生产 / 联调（默认）** | `node index.js`、`npm start`、`./start.sh` | 全功能：UDP + MQTT/Protobuf、多网关、写入 `simulator/sim-state.json` 供调试、完整异常矩阵（定义见 [`anomaly_module.js`](anomaly_module.js)） |
-| **实验性 v2** | `node main.js` | 模块化（`src/`）、运动与环境区、`derived-anomalies`；MQTT 未完整实现（回退 UDP）；默认不保证与任何可视化输出对齐 |
+| **弃用** | `node main.js` | 仅打印警告并加载 **`index.js`**；请改用 `node index.js` 或根目录 `lorasim-cli.mjs run` |
 
-`main.js --legacy` 会转调本目录下的 `index.js`。
-
-**与 `main.js` 的能力差集（摘要）**：完整 MQTT 多网关路径、README 文档化的异常触发与 `index.js` 联调路径仅在 **`index.js`**；`main.js` 侧重运动/环境/结构验证。
+**运动 / 环境区 / 衍生异常（原 v2）**：在 JSON 中配置 `environment`（zones/events）、`devices[].movement`、`derivedAnomalies` 或 `v2DerivedAnomalies: true` 时，由 **`index.js`** 经 [`src/runtime/motion-environment.js`](src/runtime/motion-environment.js) 并入上行（与 `anomaly_module` 显式异常并存）。MQTT/多网关/状态导出仍以 `index.js` 为准。
 
 ## OpenClaw Agent（插件集成）
 
@@ -28,17 +26,29 @@
 - **LoRaWAN 1.0.3 协议** — OTAA/ABP 激活、密钥派生、MAC 命令
 - **物理层仿真** — 信号传播模型、RSSI/SNR 计算、距离衰减
 - **多网关支持** — overlapping/handover/failover 三种模式
-- **异常注入** — 18 种异常场景，覆盖协议/射频/行为三层
+- **异常注入** — 场景以 [`anomaly_module.js`](anomaly_module.js) 中 `ANOMALY_SCENARIOS` 为准（`getSupportedAnomalies()` 可列出键名），覆盖协议/射频/行为三层
 
-### 异常场景 (18 种)
+### 异常场景（与 `index.js` 接线关系）
 
-| 类别 | 异常类型 |
-|------|----------|
-| **协议层** | fcnt-duplicate, fcnt-jump, mic-corrupt, payload-corrupt, wrong-devaddr, mic-wrong-key, invalid-datarate |
-| **射频层** | signal-weak, signal-spike, invalid-frequency, single-channel, duty-cycle-violation, adr-reject |
-| **行为层** | rapid-join, devnonce-repeat, burst-traffic, random-drop, confirmed-noack |
+**已在 `index.js` 上行/下行路径生效（可测）**
 
-另有 **v3 扩展场景**（如 `gateway-offline`、`time-desync`、`downlink-corrupt` 等）定义在 [`anomaly_module.js`](anomaly_module.js)，与 `index.js` 共用同一实现。
+| 类型 | scenario / 说明 |
+|------|-----------------|
+| 协议 / PHY 字节 | `fcnt-duplicate`, `fcnt-jump`, `mic-corrupt`, `payload-corrupt`, `mac-corrupt`（修改后的 PHY 会写入 `base64Payload` 再发出） |
+| 射频元数据 | `signal-weak`, `signal-spike`, `signal-degrade`（含多网关时 `signalOverride` 不被 per-GW RSSI 覆盖） |
+| 丢包 / Join 行为 | `random-drop`, `rapid-join`, `devnonce-repeat`（Join 使用 `_forceDevNonce`） |
+| DevAddr 冲突 | `devaddr-reuse`（覆盖 `devAddr` / `devAddrHex`，MIC 与网络不一致属预期） |
+| 下行相关 | `confirmed-noack`（下行 Data 帧中清除 NS→设备的 ACK 位）、`downlink-corrupt`（下行 Data 的 MIC/负载比特翻转）、`gateway-offline`（在离线窗口内抑制上行发送） |
+
+**仅在 `anomaly_module` 中定义、`index.js` 尚未接线的标志类场景（日志/标志有效，行为未实现）**
+
+`rapid-uplink`, `network-delay`, `freq-hop-abnormal`, `sf-switch-abnormal`, `time-desync`, `ack-suppress` — 需在调度器、下行时序或上行选频/SF 逻辑中增加读取。
+
+**文档/Discord 曾出现但仓库中不存在同名 scenario 的名称**
+
+`wrong-devaddr`, `mic-wrong-key`, `invalid-datarate`, `invalid-frequency`, `single-channel`, `duty-cycle-violation`, `adr-reject`, `burst-traffic` 等 **不是** `ANOMALY_SCENARIOS` 的键；请使用上表与 `anomaly_module.js` 中的名称。
+
+**独立机制**：`environment` / `derivedAnomalies`（[`src/runtime/motion-environment.js`](src/runtime/motion-environment.js)）与 `injectAnomaly` 并存，勿混用为同一列表。
 
 ## 快速开始
 
@@ -104,7 +114,7 @@ node scripts/lorasim-cli.mjs help
 
 ```bash
 # 启动模拟器（支持把额外 simulator 参数放在 -- 之后）
-node scripts/lorasim-cli.mjs run -c simulator/configs/example-extends-chirpstack.json -- --lns-host 127.0.0.1
+node scripts/lorasim-cli.mjs run -c simulator/configs/example-extends-chirpstack.json -- --lns-host 10.0.0.3
 
 # 校验配置
 node scripts/lorasim-cli.mjs validate -c simulator/configs/example-extends-chirpstack.json -p multigw
@@ -130,6 +140,16 @@ npm run sim:cs:gw:check -- -c ../simulator/configs/example-extends-chirpstack.js
 
 模拟器会持续写入 `simulator/sim-state.json`，用于本地脚本解析/排障。Web 控制台（可选）位于仓库根目录 `ui/`。
 模拟器会在运行中更新状态字段（如 `joined`、`RSSI`、`FCnt`），便于日志/脚本排障。
+
+### Web 控制台与 ChirpStack 真实拓扑（可选）
+
+在 `controlServer.enabled: true` 时，同一进程提供控制面 HTTP API（默认端口见配置）。除节点/网关编排外，可启用 **ChirpStack 拓扑导入**：
+
+- **配置**（`chirpstack` 段）：`topologyEnabled`、`apiToken`、`applicationId`、`tenantId`；可选 `applicationIds`（多应用 UUID 数组）、`inventoryPollSec`、`rxStalenessSec`；UDP 网关模式若需应用集成 MQTT 的 `rxInfo`，可设 `integrationMqtt`（单独连接 Broker 订阅 `application/+/device/+/event/up`，JSON 集成）。
+- **环境变量**：`ENABLE_CHIRPSTACK_TOPOLOGY=true` 与 `topologyEnabled` 二选一逻辑见 [`simulator/index.js`](index.js) 启动时轮询。
+- **`sim-state.json` 扩展**：`topologyOverlay`（仅 CS 实体的画布坐标）、`chirpstackInventory`（REST 快照）、`chirpstackLiveRx`（MQTT 解析的接收关系）；契约见根目录 [`schemas/sim-state-v1.schema.json`](../schemas/sim-state-v1.schema.json)。
+- **HTTP**：`GET /sim-state` 在启用拓扑时返回合并后的 `nodes`/`gateways`（含 `source: chirpstack`）、`topologyDisplayEnabled`；`POST /chirpstack/refresh-inventory` 立即拉取 REST 清单。
+- **Web UI**：顶栏 **CS 拓扑**、左栏 **来源**（全部/模拟/CS）与 **刷新**；Scenario 表单中可编辑上述 `chirpstack` 拓扑字段（见 [`ui/README.md`](../ui/README.md)）。实操说明见 [`docs/使用指南.md`](docs/使用指南.md) §5.1、状态机见 [`docs/LORAWAN_SIM_CHIRPSTACK_UI_STATE_MACHINE.md`](../docs/LORAWAN_SIM_CHIRPSTACK_UI_STATE_MACHINE.md)。
 
 ### 连接 ChirpStack
 
@@ -449,9 +469,9 @@ node scripts/generate-simulator-config-explicit-devices.mjs \
 - `signalModel.shadowFadingStd`：阴影衰落标准差
 - `signalModel.fastFadingEnabled`：是否启用快衰落
 
-多网关优先级提醒（避免你以为没生效）：
+多网关与射频元数据：
 - 当 `multiGateway.enabled=true` 时，模拟器先为每台网关按 `signalModel + gateway.position/rxGain/rxSensitivity/cableLoss` 计算接收质量（rssi/snr），再按 `multiGateway.mode` 选择目标网关。
-- UDP/MQTT 会把“选中网关的接收质量”写入最终 rxpk（因此开启 multiGateway 后，`signal-weak/signal-spike` 这类异常对最终 rxpk 的 rssi/snr 覆盖优先级会更靠后：最终仍以网关接收计算为准）。
+- 若本帧上行触发了异常里的 **signalOverride**（例如 `signal-weak`、`signal-spike`），则 **所有选中网关** 写入 rxpk 的 rssi/snr 均采用异常覆盖后的值，而不再用各网关几何计算值（否则弱信号会看起来像“仍然很强”）。
 
 ### 3. 配置验证（先验证配置能被模拟器正确接受）
 

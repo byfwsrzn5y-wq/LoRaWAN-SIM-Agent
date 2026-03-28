@@ -8,7 +8,12 @@
 
 | 文档 | 说明 |
 |------|------|
-| [使用指南](使用指南.md) | 从零到跑通：环境、命令行运行、OpenClaw 配置与推荐流程（ChirpStack → 同步 → 模拟器） |
+| [使用指南](使用指南.md) | 从零到跑通：环境、命令行运行、OpenClaw 配置与推荐流程（ChirpStack → 同步 → 模拟器）；§5.1 为 **Web UI + ChirpStack 真实拓扑**（Scenario、左栏刷新、`topologyOverlay` 等） |
+| [ChirpStack 联调配置核对清单](ChirpStack联调配置核对清单.md) | 本地/第三方 ChirpStack：流量路径与 REST 路径、JSON 字段、Bridge/MQTT/区域对齐、可勾选核对表 |
+| [ChirpStack 测试环境 · 100 节点准备流程](ChirpStack测试环境_100节点准备流程.md) | 清点现网 / 清空测试应用设备 / Agent 指令模板；配合 `scripts/chirpstack-inventory.mjs` |
+| [OpenClaw 快速对接](../../docs/OPENCLAW_QUICKSTART.md) | 插件路径、`projectPath` 与 `LORAWAN_SIM_PROJECT_PATH` 对照（本仓库布局） |
+| [配置与联调总览](配置与联调总览.md) | 单一入口：配置加载顺序、v2/legacy、Bridge/MQTT/UDP、`sim-state` |
+| [配置场景与校验](配置场景与校验.md) | 典型场景与配置校验要点 |
 
 ---
 
@@ -48,4 +53,4 @@
 
 ---
 
-根目录 [README.md](../README.md) 提供快速开始、配置要点与 OpenClaw 接入概要。
+根目录 [README.md](../README.md) 提供快速开始、`scripts/lorasim-cli.mjs` 最短路径与 OpenClaw 接入概要；仓库级 **`docs/`** 索引见 [docs/README.md](../../docs/README.md)（含 UI v1、异常监测、CONFIG_MAP）。

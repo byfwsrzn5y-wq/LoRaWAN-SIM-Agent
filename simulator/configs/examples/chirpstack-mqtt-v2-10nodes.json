@@ -1,0 +1,148 @@
+{
+  "version": "2.0",
+  "description": "Golden: 10 OTAA devices (v2.0 flat devices[]) + MQTT Gateway Bridge. Align mqttTopicPrefix and marshaler with ChirpStack region / Bridge.",
+  "simulation": {
+    "duration": 600,
+    "gateway": {
+      "gatewayEui": "19023c6b00000000",
+      "address": "127.0.0.1",
+      "port": 1702,
+      "location": { "x": 500, "y": 300, "z": 30 }
+    },
+    "region": "AS923",
+    "logLevel": "info"
+  },
+  "mqtt": {
+    "enabled": true,
+    "server": "tcp://127.0.0.1:1883",
+    "username": "",
+    "password": "",
+    "clientId": "lorawan-gw-sim-v2-10",
+    "clean": true,
+    "qos": 0,
+    "marshaler": "protobuf",
+    "mqttTopicPrefix": "as923"
+  },
+  "devices": [
+    {
+      "name": "golden-00",
+      "devEui": "18d3bf0000000000",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "joinEui": "0000000000000000",
+      "interval": 60,
+      "fPort": 2,
+      "payload": "0123456789",
+      "location": { "x": 100, "y": 100 },
+      "mode": "otaa",
+      "enabled": true
+    },
+    {
+      "name": "golden-01",
+      "devEui": "18d3bf1600000001",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "joinEui": "0000000000000000",
+      "interval": 60,
+      "fPort": 2,
+      "payload": "0123456789",
+      "location": { "x": 250, "y": 120 },
+      "mode": "otaa",
+      "enabled": true
+    },
+    {
+      "name": "golden-02",
+      "devEui": "18d3bf3200000002",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "joinEui": "0000000000000000",
+      "interval": 60,
+      "fPort": 2,
+      "payload": "0123456789",
+      "location": { "x": 400, "y": 90 },
+      "mode": "otaa",
+      "enabled": true
+    },
+    {
+      "name": "golden-03",
+      "devEui": "18d3bf4800000003",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "joinEui": "0000000000000000",
+      "interval": 60,
+      "fPort": 2,
+      "payload": "0123456789",
+      "location": { "x": 550, "y": 140 },
+      "mode": "otaa",
+      "enabled": true
+    },
+    {
+      "name": "golden-04",
+      "devEui": "18d3bf6400000004",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "joinEui": "0000000000000000",
+      "interval": 60,
+      "fPort": 2,
+      "payload": "0123456789",
+      "location": { "x": 180, "y": 280 },
+      "mode": "otaa",
+      "enabled": true
+    },
+    {
+      "name": "golden-05",
+      "devEui": "18d3bf8000000005",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "joinEui": "0000000000000000",
+      "interval": 60,
+      "fPort": 2,
+      "payload": "0123456789",
+      "location": { "x": 320, "y": 300 },
+      "mode": "otaa",
+      "enabled": true
+    },
+    {
+      "name": "golden-06",
+      "devEui": "18d3bf9c00000006",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "joinEui": "0000000000000000",
+      "interval": 60,
+      "fPort": 2,
+      "payload": "0123456789",
+      "location": { "x": 480, "y": 260 },
+      "mode": "otaa",
+      "enabled": true
+    },
+    {
+      "name": "golden-07",
+      "devEui": "18d3bfb800000007",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "joinEui": "0000000000000000",
+      "interval": 60,
+      "fPort": 2,
+      "payload": "0123456789",
+      "location": { "x": 620, "y": 290 },
+      "mode": "otaa",
+      "enabled": true
+    },
+    {
+      "name": "golden-08",
+      "devEui": "18d3bfd400000008",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "joinEui": "0000000000000000",
+      "interval": 60,
+      "fPort": 2,
+      "payload": "0123456789",
+      "location": { "x": 240, "y": 450 },
+      "mode": "otaa",
+      "enabled": true
+    },
+    {
+      "name": "golden-09",
+      "devEui": "18d3bff000000009",
+      "appKey": "00112233445566778899AABBCCDDEEFF",
+      "joinEui": "0000000000000000",
+      "interval": 60,
+      "fPort": 2,
+      "payload": "0123456789",
+      "location": { "x": 500, "y": 480 },
+      "mode": "otaa",
+      "enabled": true
+    }
+  ]
+}

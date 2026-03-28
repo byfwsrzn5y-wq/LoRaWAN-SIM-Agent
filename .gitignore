@@ -1,0 +1,29 @@
+# Local secrets (OpenClaw / ChirpStack); use .env.example as template
+.env
+.env.local
+
+# macOS / Finder (keep iCloud-synced trees quieter)
+.DS_Store
+**/.DS_Store
+
+# Editor / local merge noise
+*.swp
+*~
+
+# Cursor / IDE (local; do not commit)
+.cursor/
+
+# Dev restart script logs / PIDs (scripts/restart-dev-services.sh)
+.dev-logs/
+
+# Local OpenClaw workspace (do not commit)
+.openclaw/
+
+# Local notes / experiments (do not commit)
+memory/
+
+# Local simulator run artifacts (do not commit)
+simulator/configs/config-explicit-active-*.json
+simulator/*anomaly-test*report*.json
+simulator/v3-e2e-test-result.json
+simulator/visualizer/dist/

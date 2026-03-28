@@ -2,6 +2,25 @@
 
 用于检测与告警设计的参考文档。记录 18 种仿真器注入异常与 ChirpStack v4 的预期/观测响应。
 
+**配套**：细粒度监测/告警规则草稿见 [`DETECTION_RULES.md`](DETECTION_RULES.md)（本文件偏「行为与 LNS 响应」速查）。
+
+---
+
+## 空口元数据契约（`injectAnomaly` / `signalOverride`）
+
+仿真器在 **`index.js` 上行路径**对 `anomaly_module` 返回的 `signalOverride`（即设备上 `_anomalyOverride`）统一处理，规则如下：
+
+| 字段 | 作用 | 说明 |
+|------|------|------|
+| `rssiOffset` / `snrOffset` | 在已计算的 RSSI/SNR 上**累加** | 先于绝对值字段应用（如 `signal-degrade`） |
+| `rssi` / `snr` | **绝对覆盖** | 覆盖上述结果（如 `signal-weak`、`signal-spike`） |
+| `frequency` | **MHz**，写入 Semtech `rxpk.freq` | 如 `invalid-frequency` |
+| `dataRate` | LoRaWAN **DR 0–5** 映射 SF12…SF7 | 写入 `rxpk` 的 `datr`；**超出 0–5 时本仿真器不改变 SF**（仅协议层仍可能异常） |
+
+**仅改 PHYPayload / 设备标志、不经过 `signalOverride` 的**：MIC/payload 损坏、`wrong-devaddr`、`rapid-join` 等——对网关元数据的影响以具体场景为准。
+
+**未由本契约覆盖的 v3 字段**（如仅设置设备内部标志、由下行路径消费）：仍以 `anomaly_module.js` 与 `index.js` 分支为准；新增场景时建议在本表补一行。
+
 ---
 
 ## 检测方式速查

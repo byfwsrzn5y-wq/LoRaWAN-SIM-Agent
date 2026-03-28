@@ -1,11 +1,21 @@
 {
   "name": "lorawan_sim",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "OpenClaw 插件：通过 Bot 管理、配置与运行 LoRaWAN 网关模拟器",
   "type": "module",
   "main": "index.js",
   "openclaw": {
     "extensions": ["./index.js"]
   },
-  "engines": { "node": ">=18" }
+  "engines": {
+    "node": ">=18"
+  },
+  "peerDependencies": {
+    "openclaw": ">=0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  }
 }

@@ -1,14 +1,420 @@
 {
-  "gatewayEui": "0203040506070809",
-  "stats": {"enabled": true, "intervalMs": 30000},
-  "lorawan": {"enabled": true, "joinEnabled": true, "region": "AS923", "appKey": "00112233445566778899AABBCCDDEEFF", "nwkKey": "00112233445566778899AABBCCDDEEFF"},
-  "uplink": {"enabled": true, "intervalMs": 10000},
-  "udpMode": true,
-  "lnsHost": "127.0.0.1",
-  "lnsPort": 1700,
+  "version": "2.0",
+  "lorawan": {
+    "enabled": true,
+    "joinEnabled": true,
+    "region": "AS923",
+    "macVersion": "LORAWAN_1_0_4",
+    "activation": "OTAA",
+    "deviceCount": 5,
+    "appKey": "00112233445566778899AABBCCDDEEFF",
+    "devEuiStart": "18d3bf0000000000",
+    "csvImportPath": "configs/otaa-100-devices.csv"
+  },
+  "simulation": {
+    "duration": 120,
+    "autoStart": true,
+    "resetOtaaOnStart": true,
+    "gateway": {
+      "gatewayEui": "19023c6b00000000",
+      "address": "10.0.0.3",
+      "port": 1702
+    },
+    "region": "AS923",
+    "logLevel": "info"
+  },
+  "signalModel": {
+    "enabled": true,
+    "nodePosition": {
+      "x": 700,
+      "y": 446,
+      "z": 2
+    },
+    "gatewayPosition": {
+      "x": 700,
+      "y": 446,
+      "z": 30
+    },
+    "environment": "indoor",
+    "txPower": 16,
+    "txGain": 3.2,
+    "rxGain": 5,
+    "cableLoss": 0.5,
+    "noiseFloor": -100,
+    "shadowFadingStd": 6,
+    "fastFadingEnabled": false,
+    "timeVariation": true
+  },
+  "multiGateway": {
+    "enabled": true,
+    "mode": "handover",
+    "primaryGateway": "19023c6b00f1c0eb",
+    "gateways": [
+      {
+        "eui": "19023c6b00000000",
+        "name": "gw-apex-sw",
+        "position": {
+          "x": 570.8780570652175,
+          "y": 711.5643682065217,
+          "z": 30
+        },
+        "rxGain": 5,
+        "rxSensitivity": -137,
+        "cableLoss": 0.5,
+        "noiseFloor": -100,
+        "syncStatus": {
+          "state": "synced",
+          "targets": [
+            "chirpstack",
+            "simulator"
+          ],
+          "lastError": null,
+          "updatedAt": "2026-03-27T15:04:46.131Z"
+        }
+      },
+      {
+        "eui": "19023c6b00000001",
+        "name": "gw-apex-se",
+        "position": {
+          "x": 864.1328125,
+          "y": 347.50390625,
+          "z": 30
+        },
+        "rxGain": 5,
+        "rxSensitivity": -137,
+        "cableLoss": 0.5,
+        "noiseFloor": -100,
+        "syncStatus": {
+          "state": "synced",
+          "targets": [
+            "chirpstack",
+            "simulator"
+          ],
+          "lastError": null,
+          "updatedAt": "2026-03-27T10:10:26.209Z"
+        }
+      },
+      {
+        "eui": "19023c6b00000002",
+        "name": "gw-apex-north",
+        "position": {
+          "x": 387.23046875,
+          "y": 443.49171875,
+          "z": 30
+        },
+        "rxGain": 5,
+        "rxSensitivity": -137,
+        "cableLoss": 0.5,
+        "noiseFloor": -80,
+        "syncStatus": {
+          "state": "synced",
+          "targets": [
+            "chirpstack",
+            "simulator"
+          ],
+          "lastError": null,
+          "updatedAt": "2026-03-27T15:03:02.692Z"
+        }
+      }
+    ]
+  },
+  "controlServer": {
+    "enabled": true,
+    "port": 9999,
+    "host": "127.0.0.1"
+  },
+  "uplink": {
+    "enabled": true,
+    "intervalMs": 10000,
+    "scatterMode": "random",
+    "codec": "simple",
+    "payloadLength": 5,
+    "interval": 10000,
+    "fPort": 2
+  },
   "devices": [
-    {"name": "mic-corrupt", "devEui": "0102030405060701", "activation": "OTAA", "appKey": "00112233445566778899AABBCCDDEEFF", "nwkKey": "00112233445566778899AABBCCDDEEFF", "anomaly": {"enabled": true, "scenario": "mic-corrupt", "trigger": "always", "params": {"bitFlip": 4}}, "nodeState": {"uplinkIntervalMs": 10000, "dataRate": 3}},
-    {"name": "payload-corrupt", "devEui": "0102030405060702", "activation": "OTAA", "appKey": "00112233445566778899AABBCCDDEEFF", "nwkKey": "00112233445566778899AABBCCDDEEFF", "anomaly": {"enabled": true, "scenario": "payload-corrupt", "trigger": "random-30-percent", "params": {}}, "nodeState": {"uplinkIntervalMs": 10000, "dataRate": 3}},
-    {"name": "fcnt-duplicate", "devEui": "0102030405060703", "activation": "OTAA", "appKey": "00112233445566778899AABBCCDDEEFF", "nwkKey": "00112233445566778899AABBCCDDEEFF", "anomaly": {"enabled": true, "scenario": "fcnt-duplicate", "trigger": "every-3rd-uplink", "params": {}}, "nodeState": {"uplinkIntervalMs": 10000, "dataRate": 3}}
-  ]
+    {
+      "name": "sim-node-0005",
+      "enabled": true,
+      "mode": "otaa",
+      "devEui": "18D3BF0000000005",
+      "appKey": "",
+      "interval": 10,
+      "fPort": 2,
+      "location": {
+        "x": 49.38671875,
+        "y": 420.3125,
+        "z": 2
+      },
+      "adr": true,
+      "adrReject": false,
+      "devStatus": false,
+      "duplicateFirstData": false,
+      "uplink": {
+        "codec": "simple"
+      },
+      "dataRate": 7,
+      "txPower": 16
+    },
+    {
+      "name": "sim-node-0006",
+      "enabled": true,
+      "mode": "otaa",
+      "devEui": "18D3BF0000000006",
+      "appKey": "",
+      "interval": 10,
+      "fPort": 2,
+      "location": {
+        "x": 825.5703125,
+        "y": 704.2578125,
+        "z": 2
+      },
+      "adr": true,
+      "adrReject": false,
+      "devStatus": false,
+      "duplicateFirstData": false,
+      "uplink": {
+        "codec": "simple"
+      },
+      "dataRate": 7,
+      "txPower": 16
+    },
+    {
+      "name": "sim-node-0007",
+      "enabled": true,
+      "mode": "otaa",
+      "devEui": "18D3BF0000000007",
+      "appKey": "",
+      "interval": 10,
+      "fPort": 2,
+      "location": {
+        "x": 291.37890625,
+        "y": 773.6875,
+        "z": 2
+      },
+      "adr": true,
+      "adrReject": false,
+      "devStatus": false,
+      "duplicateFirstData": false,
+      "uplink": {
+        "codec": "simple"
+      },
+      "dataRate": 7,
+      "txPower": 16
+    },
+    {
+      "name": "sim-node-0008",
+      "enabled": true,
+      "mode": "otaa",
+      "devEui": "18D3BF0000000008",
+      "appKey": "",
+      "interval": 10,
+      "fPort": 2,
+      "location": {
+        "x": 87.87890625,
+        "y": 519.3125,
+        "z": 2
+      },
+      "adr": true,
+      "adrReject": false,
+      "devStatus": false,
+      "duplicateFirstData": false,
+      "uplink": {
+        "codec": "simple"
+      },
+      "dataRate": 7,
+      "txPower": 16
+    },
+    {
+      "name": "sim-node-0009",
+      "enabled": true,
+      "mode": "otaa",
+      "devEui": "18D3BF0000000009",
+      "appKey": "",
+      "interval": 10,
+      "fPort": 2,
+      "location": {
+        "x": 699.7578125,
+        "y": 561.94140625,
+        "z": 2
+      },
+      "adr": true,
+      "adrReject": false,
+      "devStatus": false,
+      "duplicateFirstData": false,
+      "uplink": {
+        "codec": "simple"
+      },
+      "dataRate": 7,
+      "txPower": 16
+    },
+    {
+      "name": "lorasim-device-000",
+      "enabled": true,
+      "mode": "otaa",
+      "devEui": "18D3BF0000000000",
+      "appKey": "",
+      "interval": 10,
+      "fPort": 2,
+      "location": {
+        "x": 32.56640625,
+        "y": 298.62890625,
+        "z": 2
+      },
+      "adr": true,
+      "adrReject": false,
+      "devStatus": false,
+      "duplicateFirstData": false,
+      "uplink": {
+        "codec": "simple"
+      },
+      "dataRate": 7,
+      "txPower": 16,
+      "anomaly": {
+        "enabled": true,
+        "scenario": "fcnt-duplicate",
+        "trigger": "every-3rd-uplink",
+        "params": {
+          "delayMs": 1200,
+          "maxAttempts": 0
+        }
+      }
+    },
+    {
+      "name": "lorasim-device-001",
+      "enabled": true,
+      "mode": "otaa",
+      "devEui": "18D3BF0000000001",
+      "appKey": "",
+      "interval": 10,
+      "fPort": 2,
+      "location": {
+        "x": 618.08984375,
+        "y": 377.703125,
+        "z": 2
+      },
+      "adr": true,
+      "adrReject": false,
+      "devStatus": false,
+      "duplicateFirstData": false,
+      "anomaly": {
+        "enabled": true,
+        "scenario": "fcnt-jump",
+        "trigger": "always",
+        "params": {}
+      },
+      "uplink": {
+        "codec": "simple"
+      },
+      "dataRate": 7,
+      "txPower": 16
+    },
+    {
+      "name": "lorasim-device-002",
+      "enabled": true,
+      "mode": "otaa",
+      "devEui": "18D3BF0000000002",
+      "appKey": "",
+      "interval": 10,
+      "fPort": 2,
+      "location": {
+        "x": 778.6953125,
+        "y": 199.62890625,
+        "z": 2
+      },
+      "adr": true,
+      "adrReject": false,
+      "devStatus": false,
+      "duplicateFirstData": false,
+      "anomaly": {
+        "enabled": true,
+        "scenario": "signal-weak",
+        "trigger": "always",
+        "params": {}
+      },
+      "uplink": {
+        "codec": "simple"
+      },
+      "dataRate": 7,
+      "txPower": 16
+    },
+    {
+      "name": "lorasim-device-003",
+      "enabled": true,
+      "mode": "otaa",
+      "devEui": "18D3BF0000000003",
+      "appKey": "",
+      "interval": 10,
+      "fPort": 2,
+      "location": {
+        "x": 296.5078125,
+        "y": 242.94140625,
+        "z": 2
+      },
+      "adr": true,
+      "adrReject": false,
+      "devStatus": false,
+      "duplicateFirstData": false,
+      "anomaly": {
+        "enabled": true,
+        "scenario": "signal-spike",
+        "trigger": "always",
+        "params": {}
+      },
+      "uplink": {
+        "codec": "simple"
+      },
+      "dataRate": 7,
+      "txPower": 16
+    },
+    {
+      "name": "sim-node-000a",
+      "enabled": true,
+      "mode": "otaa",
+      "devEui": "18D3BF000000000A",
+      "appKey": "",
+      "interval": 10,
+      "fPort": 2,
+      "location": {
+        "x": 868.1953125,
+        "y": 502.12890625,
+        "z": 2
+      },
+      "adr": true,
+      "adrReject": false,
+      "devStatus": false,
+      "duplicateFirstData": false,
+      "anomaly": {
+        "enabled": false,
+        "scenario": "fcnt-duplicate",
+        "trigger": "always",
+        "params": {}
+      },
+      "uplink": {
+        "codec": "simple"
+      },
+      "dataRate": 7,
+      "txPower": 16
+    }
+  ],
+  "gatewayEui": "19023c6b00000000",
+  "lnsHost": "10.0.0.3",
+  "lnsPort": 1702,
+  "udpBindPort": 0,
+  "mqtt": {
+    "enabled": false
+  },
+  "profileConfig": {
+    "profilesDir": "configs/profiles",
+    "activeProfile": "7node3gw",
+    "defaultProfile": "7node3gw"
+  },
+  "chirpstack": {
+    "baseUrl": "http://10.0.0.3:8090",
+    "authHeader": "Grpc-Metadata-Authorization",
+    "applicationId": "540a999c-9eeb-4c5c-bed1-778dacddaf46",
+    "deviceProfileId": "a1b2c3d4-1111-2222-3333-444444444444",
+    "tenantId": "81d48efb-6216-4c7f-8c21-46a5eac9d737"
+  },
+  "control": {}
 }

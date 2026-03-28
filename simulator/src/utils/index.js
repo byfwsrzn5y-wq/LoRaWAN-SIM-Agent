@@ -83,6 +83,49 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+/**
+ * 是否在上行 Data 帧 FCtrl 中置 ADR 位（与 ChirpStack ADR 联动）。
+ * 优先级：deviceSpec.lorawan.adr → deviceSpec.adr → lorawanCfg.adr → 默认 true。
+ * @param {object | null | undefined} deviceSpec - 配置里的单设备对象或行为模板合并结果
+ * @param {object | null | undefined} lorawanCfg - config.lorawan
+ */
+function resolveLorawanAdrEnabled(deviceSpec, lorawanCfg) {
+  const lw = deviceSpec && deviceSpec.lorawan;
+  if (lw && typeof lw.adr === 'boolean') return lw.adr;
+  if (deviceSpec && typeof deviceSpec.adr === 'boolean') return deviceSpec.adr;
+  if (lorawanCfg && typeof lorawanCfg.adr === 'boolean') return lorawanCfg.adr;
+  return true;
+}
+
+/**
+ * LinkADRAns status bit0 (channel mask ACK). ChirpStack often sends ChMaskCntl=6 with ChMask=0
+ * ("all default channels on" per regional params); the old check only allowed cntl===0 && mask!==0,
+ * which made ch_mask_ack false forever and tripped chirpstack::maccommand::link_adr warnings.
+ */
+function linkAdrChannelMaskAck(chMask, chMaskCntl) {
+  const cntl = chMaskCntl & 0x07;
+  const m = chMask & 0xffff;
+  if (cntl === 0) {
+    // ChirpStack/NS + tooling sometimes leads to a byte-order / mapping
+    // mismatch between "channel bits list" views and how this simulator
+    // reads ChMask (readUInt16LE).
+    // Keep the check strict enough to avoid masking arbitrary masks:
+    // accept only masks where one byte is all-zero and the other byte is non-zero.
+    const low = m & 0x00ff;
+    const high = m & 0xff00;
+    return m !== 0 && ((low !== 0 && high === 0) || (high !== 0 && low === 0));
+  }
+  if (cntl === 6 || cntl === 7) return true;
+  return false;
+}
+
+/** Stored channel mask after a fully accepted LinkADRReq (status 0x07). */
+function linkAdrAppliedChannelMask(chMask, chMaskCntl) {
+  const cntl = chMaskCntl & 0x07;
+  if (cntl === 6 || cntl === 7) return 0xffff;
+  return chMask & 0xffff;
+}
+
 module.exports = {
   hexToBufLen,
   genRandomBytes,
@@ -97,5 +140,8 @@ module.exports = {
   clamp,
   shuffleArray,
   pickWeighted,
-  nowIso
+  nowIso,
+  resolveLorawanAdrEnabled,
+  linkAdrChannelMaskAck,
+  linkAdrAppliedChannelMask
 };

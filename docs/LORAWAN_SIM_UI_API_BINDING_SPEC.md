@@ -40,6 +40,9 @@ Common response shape:
 | Load Profile | `POST /config-profiles/load` | TopBar load profile action | form/canvas values refreshed | keep previous snapshot + error toast |
 | Apply Profile | `POST /config-profiles/apply` | TopBar apply profile action | simulator config and view sync | show apply failure and retry hint |
 | Rename Profile | `POST /config-profiles/rename` | TopBar rename profile action | selector label updated | keep old label + error toast |
+| Save Scenario（含 ChirpStack 拓扑） | `PATCH /resources/simulation` | Scenario 表单：除 `signalModel`/`multiGateway` 外可合并 `simulation.chirpstack`（`topologyEnabled`、`inventoryPollSec`、`applicationIds`、`integrationMqtt` 等） | 配置持久化；拓扑需 token 与合法 ID | 校验失败或 500 时记录日志 |
+| Refresh ChirpStack inventory | `POST /chirpstack/refresh-inventory`（或 `/topology/refresh-inventory`） | 左栏「刷新」 | `GET /sim-state` 中 `chirpstackInventory` 更新 | 显示 REST 错误于左栏 |
+| Poll sim state（拓扑） | `GET /sim-state` | React Query 定时拉取 | 列表/画布显示合并后的 `nodes`/`gateways`、`topologyDisplayEnabled` | 与模拟器断连时现有错误条 |
 
 ## Endpoint Request Contracts (UI-facing)
 
