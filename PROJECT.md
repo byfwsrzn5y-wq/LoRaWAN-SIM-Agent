@@ -149,7 +149,7 @@ LoRaWAN-SIM/
 │   ├── multi_gateway_advanced.js  # 多网关管理（切换、负载均衡）
 │   ├── anomaly_module.js          # 异常注入（被 index.js require）
 │   ├── diagnose.js                # 网络诊断工具
-│   ├── sim-state.json            # 调试状态持久化输出（持续写盘）
+│   ├── sim-state.json            # 调试状态持久化输出（持续写盘；默认不提交 Git）
 │   ├── config.json               # 默认运行配置
 │   ├── start.sh                   # 启动脚本（模拟器核心，可独立于 UI）
 │   ├── start-explicit-active.sh  # 显式激活模式启动脚本

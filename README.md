@@ -21,7 +21,7 @@
 
 | 路径 | 说明 |
 |------|------|
-| [`simulator/`](simulator/) | 主程序：`index.js`；默认配置 `config.json`；运行中写入 [`simulator/sim-state.json`](simulator/sim-state.json) |
+| [`simulator/`](simulator/) | 主程序：`index.js`；默认配置 `config.json`；运行中写入本地 `sim-state.json`（不提交，见 `.gitignore`） |
 | [`simulator/start.sh`](simulator/start.sh) | 仅启动模拟器核心（后台进程 + `.run-sim.log`，无前端） |
 | [`scripts/`](scripts/) | 统一 CLI [`lorasim-cli.mjs`](scripts/lorasim-cli.mjs)、配置校验、ChirpStack 网关/设备脚本 |
 | [`ui/`](ui/) | Web 控制台（Vite + React）；依赖模拟器控制面 HTTP API |
@@ -103,7 +103,7 @@ Vite 将 API 代理到 `VITE_CONTROL_PROXY_TARGET`（默认 `http://127.0.0.1:99
 
 ## 运行后如何确认
 
-- **状态快照**：[`simulator/sim-state.json`](simulator/sim-state.json) 持续更新，可看 `joined`、节点列表、`stats.uplinks` / `stats.errors` 等（契约见 [`schemas/sim-state-v1.schema.json`](schemas/sim-state-v1.schema.json)）。
+- **状态快照**：运行时在 `simulator/sim-state.json` 持续更新（默认不提交 Git，见 [`simulator/.gitignore`](simulator/.gitignore)），可看 `joined`、节点列表、`stats.uplinks` / `stats.errors` 等（契约见 [`schemas/sim-state-v1.schema.json`](schemas/sim-state-v1.schema.json)）。
 - **日志**：使用 [`simulator/start.sh`](simulator/start.sh) 时，标准输出写入 `simulator/.run-sim.log`；直接用 `node index.js` 时日志在终端。
 
 ---

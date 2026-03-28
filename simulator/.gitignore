@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Simulator runtime (continuously overwritten by index.js)
+sim-state.json
+
 # Simulator runtime
 .sim.pid
 fcnt_state.json

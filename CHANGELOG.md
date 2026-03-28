@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - Root [`.gitignore`](.gitignore): ignore `.cursor/` local IDE settings; keep `.env` / `memory/` / `.openclaw/` exclusions documented in README.
 - Docs: Git/CI workflow in root [`README.md`](README.md) (section「Git 与持续集成」); [`docs/README.md`](docs/README.md) index table for `.github/workflows/ci.yml` and ignore rules.
 - `simulator/package.json`: add `npm test` (`tests/orchestrator.test.js`, `tests/chirpstack-rxinfo.test.js`); [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs it after root smoke steps (matches README pre-push checklist).
+- `simulator/sim-state.json`: stop tracking in Git; listed in [`simulator/.gitignore`](simulator/.gitignore) as runtime output.
 
 ### Changed
 
