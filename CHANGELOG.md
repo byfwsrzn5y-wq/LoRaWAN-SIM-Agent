@@ -4,18 +4,6 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Security / hygiene (public GitHub prep)
-
-- Example configs, `.env.example`, docs, and code defaults now use **127.0.0.1** / RFC 5737-style placeholders instead of lab-specific hosts and UUIDs; removed tracked UI scratch profile `configs/profiles/blank-*.json` and ignore future blanks.
-- Root **`LICENSE`** (MIT) added for GitHub license detection.
-
-### Repository
-
-- Root [`.gitignore`](.gitignore): ignore `.cursor/` local IDE settings; keep `.env` / `memory/` / `.openclaw/` exclusions documented in README.
-- Docs: Git/CI workflow in root [`README.md`](README.md) (section「Git 与持续集成」); [`docs/README.md`](docs/README.md) index table for `.github/workflows/ci.yml` and ignore rules.
-- `simulator/package.json`: add `npm test` (`tests/orchestrator.test.js`, `tests/chirpstack-rxinfo.test.js`); [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs it after root smoke steps (matches README pre-push checklist).
-- `simulator/sim-state.json`: stop tracking in Git; listed in [`simulator/.gitignore`](simulator/.gitignore) as runtime output.
-
 ### Changed
 
 - **UI**: Top bar shows resolved profile save directory (`profilesDirResolved` + tooltip with `profileConfig.profilesDir`) from `/sim-state` `config.profileConfig`.
@@ -31,6 +19,15 @@ All notable changes to this project will be documented in this file.
   - normalized validation environment guidance to `.env`-driven `CHIRPSTACK_API_URL`
 - Maintainability pass: merged `PROJECT_GOALS_REVIEW.md` into `PROJECT.md` (北极星与交付边界); expanded `docs/README.md` with CONFIG_MAP, state machine, anomaly cross-links; fixed `simulator/docs/PROJECT_GOALS.md` doc index link; removed stale “UI removed” wording in `PROJECT_ANALYSIS.md`.
 - `simulator/docs/使用指南.md`: de-duplicated CLI blocks in favor of root `README.md` + `simulator/README.md`; kept ChirpStack checklist and config tables; fixed `docs/README.md` link target; aligned Node guidance with `PROJECT.md`.
+
+## [1.0.0] - 2026-03-29
+
+### Published
+
+- **GitHub**: default branch `main` carries the full tree; [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on `main`/`master` push and PRs.
+- **License**: root [`LICENSE`](LICENSE) (MIT) for repository detection.
+- **Hygiene**: example configs, [`.env.example`](.env.example), docs, and code defaults use **127.0.0.1** / RFC 5737-style placeholders instead of lab-specific hosts and UUIDs; UI scratch profiles `configs/profiles/blank-*.json` are gitignored; tracked `blank-*.json` removed.
+- **Repository**: root [`.gitignore`](.gitignore) (`.env`, `.cursor/`, `memory/`, `.openclaw/`, etc.); Git/CI documented in [`README.md`](README.md) and [`docs/README.md`](docs/README.md); `simulator/package.json` `npm test` in CI; `simulator/sim-state.json` untracked (runtime output).
 
 ## [v1.0.0-rc] - 2026-03-27
 
