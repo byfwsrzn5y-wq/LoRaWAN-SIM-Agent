@@ -6,6 +6,12 @@
 
 **运行时与 npm 依赖在 [`simulator/`](simulator/)**：根目录没有 `package.json`，请勿在仓库根执行 `npm install` 作为模拟器安装步骤。
 
+### Web 控制台预览
+
+在模拟器启用 **`controlServer`** 时可选启动 **[`ui/`](ui/)**：拓扑画布（节点—网关）、侧栏列表、Inspector、最近报文与活动日志。更多说明与文档索引见 [`docs/README.md`](docs/README.md)（与同一张截图说明一致）。
+
+![LoRaWAN-SIM Web 控制台：拓扑、Inspector、报文与日志](docs/images/ui-console-screenshot.png)
+
 ---
 
 ## 能力总览（本项目能做什么）

@@ -6,6 +6,12 @@ Open-source **LoRaWAN device and gateway simulator** (LoRaWAN 1.0.3) for integra
 
 **Runtime and npm dependencies live under [`simulator/`](simulator/)**: there is no `package.json` at the repository root—do **not** run `npm install` at the root to install the simulator.
 
+### Web console (preview)
+
+Optional **[`ui/`](ui/)** when the simulator **`controlServer`** is enabled: topology canvas (nodes ↔ gateways), side panels, Inspector, and recent packets / activity. Full doc index and the same screenshot context: [`docs/README.md`](docs/README.md).
+
+![LoRaWAN-SIM web console: topology, Inspector, traffic log](docs/images/ui-console-screenshot.png)
+
 ---
 
 ## Capabilities (what this project can do)
