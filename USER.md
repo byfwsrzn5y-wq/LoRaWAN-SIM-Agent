@@ -4,7 +4,7 @@
 - **What to call them:** _(update as you learn)_
 - **Pronouns:** _(optional)_
 - **Timezone:** HKT (from memory logs)
-- **Notes:** Works on LoRaWAN simulator, ChirpStack v4, anomaly testing. Remote host: 10.5.40.109.
+- **Notes:** Works on LoRaWAN simulator, ChirpStack v4, anomaly testing (hosts/IDs are local; not committed in examples).
 
 ## Context
 

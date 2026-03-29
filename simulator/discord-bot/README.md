@@ -104,7 +104,7 @@ export DISCORD_TOKEN="your-bot-token"
 
 # 可选
 export SIMULATOR_PATH="/path/to/LoRaWAN-SIM/simulator"
-export CHIRPSTACK_API="http://10.5.40.109:8090/api"
+export CHIRPSTACK_API="http://127.0.0.1:8090/api"
 export CHIRPSTACK_TOKEN="your-api-token"
 export CONTROL_PORT="9999"
 ```
@@ -114,7 +114,7 @@ export CONTROL_PORT="9999"
 ```env
 DISCORD_TOKEN=your-bot-token
 SIMULATOR_PATH=/path/to/LoRaWAN-SIM/simulator
-CHIRPSTACK_API=http://10.5.40.109:8090/api
+CHIRPSTACK_API=http://127.0.0.1:8090/api
 ```
 
 ### 4. 启动 Bot

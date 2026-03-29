@@ -17,7 +17,7 @@
     "autoStart": true,
     "gateway": {
       "gatewayEui": "19023c6b00000000",
-      "address": "10.0.0.3",
+      "address": "127.0.0.1",
       "port": 1702
     },
     "region": "AS923",
@@ -427,14 +427,14 @@
     }
   ],
   "gatewayEui": "19023c6b00000000",
-  "lnsHost": "10.0.0.3",
+  "lnsHost": "127.0.0.1",
   "lnsPort": 1702,
   "udpBindPort": 0,
   "mqtt": {
     "enabled": false
   },
   "chirpstack": {
-    "baseUrl": "http://10.0.0.3:8090",
+    "baseUrl": "http://127.0.0.1:8090",
     "authHeader": "Grpc-Metadata-Authorization",
     "applicationId": "540a999c-9eeb-4c5c-bed1-778dacddaf46",
     "deviceProfileId": "a1b2c3d4-1111-2222-3333-444444444444",

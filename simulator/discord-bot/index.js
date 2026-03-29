@@ -28,7 +28,7 @@ const fs = require('fs');
 const CONFIG = {
   discordToken: process.env.DISCORD_TOKEN,
   simulatorPath: process.env.SIMULATOR_PATH || path.join(__dirname, '..'),
-  chirpstackApi: process.env.CHIRPSTACK_API || 'http://10.5.40.109:8090/api',
+  chirpstackApi: process.env.CHIRPSTACK_API || 'http://127.0.0.1:8090/api',
   chirpstackToken: process.env.CHIRPSTACK_TOKEN || '',
   controlPort: process.env.CONTROL_PORT || 9999,
   prefix: '!lora' // 命令前缀

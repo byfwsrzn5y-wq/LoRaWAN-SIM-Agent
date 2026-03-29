@@ -27,6 +27,9 @@ configs/synced-from-chirpstack.csv
 # Local notes / experiments
 ../memory/
 
+# UI scratch profiles (do not commit)
+configs/profiles/blank-*.json
+
 # Local simulator run artifacts (do not commit)
 configs/config-explicit-active-*.json
 *anomaly-test*report*.json

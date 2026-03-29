@@ -35,7 +35,7 @@
 在仓库根目录配置环境变量（勿提交 Token）：
 
 ```bash
-export CHIRPSTACK_API_URL=http://10.0.0.3:8090
+export CHIRPSTACK_API_URL=http://127.0.0.1:8090
 export CHIRPSTACK_API_TOKEN='<你的 JWT>'
 # 若返回 401，可尝试：
 # export CHIRPSTACK_AUTH_HEADER=Authorization

@@ -30,6 +30,8 @@
 | [`schemas/`](schemas/) | `lorasim-config`、`sim-state` 的 JSON Schema |
 | [`simulator/docs/`](simulator/docs/) | 模拟器侧中文说明与联调笔记 |
 
+仓库内示例 JSON / `.env.example` 中的 **IP、端口、UUID** 均为占位；联调时请改为你本机或 ChirpStack 控制台中的真实值。
+
 ---
 
 ## 快速开始：按你的目标选一条路径

@@ -738,7 +738,7 @@ function ScenarioForm({
   const [environment, setEnvironment] = useState(config?.environment || 'urban')
   const [shadowFadingStd, setShadowFadingStd] = useState(config?.shadowFadingStd ?? 8)
   const [fastFadingEnabled, setFastFadingEnabled] = useState(config?.fastFadingEnabled !== false)
-  const [chirpstackBaseUrl, setChirpstackBaseUrl] = useState(config?.chirpstackBaseUrl || 'http://10.0.0.3:8090')
+  const [chirpstackBaseUrl, setChirpstackBaseUrl] = useState(config?.chirpstackBaseUrl || 'http://127.0.0.1:8090')
   const [chirpstackApiToken, setChirpstackApiToken] = useState(config?.chirpstackApiToken || '')
   const [chirpstackAuthHeader, setChirpstackAuthHeader] = useState(config?.chirpstackAuthHeader || 'Grpc-Metadata-Authorization')
   const [chirpstackApplicationId, setChirpstackApplicationId] = useState(config?.chirpstackApplicationId || '540a999c-9eeb-4c5c-bed1-778dacddaf46')

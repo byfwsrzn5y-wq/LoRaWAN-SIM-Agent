@@ -18,7 +18,7 @@ const { URL } = require('url');
 // 解析命令行参数
 function parseArgs() {
   const args = {
-    api: process.env.CHIRPSTACK_API_URL || 'http://10.5.40.109:8090/api',
+    api: process.env.CHIRPSTACK_API_URL || 'http://127.0.0.1:8090/api',
     token: process.env.CHIRPSTACK_API_TOKEN || '',
     gateway: null,
     device: null

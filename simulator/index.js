@@ -1370,7 +1370,7 @@ async function main() {
   let config = readConfig(cliArgs.config);
   config = applyCliConfigOverrides(config, cliArgs.entries);
   if (!config.chirpstack || typeof config.chirpstack !== 'object') config.chirpstack = {};
-  if (config.chirpstack.baseUrl == null) config.chirpstack.baseUrl = 'http://10.0.0.3:8090';
+  if (config.chirpstack.baseUrl == null) config.chirpstack.baseUrl = 'http://127.0.0.1:8090';
   if (!config.chirpstack.authHeader) config.chirpstack.authHeader = 'Grpc-Metadata-Authorization';
   if (config.chirpstack.applicationId == null) config.chirpstack.applicationId = '540a999c-9eeb-4c5c-bed1-778dacddaf46';
   if (config.chirpstack.deviceProfileId == null) config.chirpstack.deviceProfileId = 'a1b2c3d4-1111-2222-3333-444444444444';

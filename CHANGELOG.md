@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security / hygiene (public GitHub prep)
+
+- Example configs, `.env.example`, docs, and code defaults now use **127.0.0.1** / RFC 5737-style placeholders instead of lab-specific hosts and UUIDs; removed tracked UI scratch profile `configs/profiles/blank-*.json` and ignore future blanks.
+- Root **`LICENSE`** (MIT) added for GitHub license detection.
+
 ### Repository
 
 - Root [`.gitignore`](.gitignore): ignore `.cursor/` local IDE settings; keep `.env` / `memory/` / `.openclaw/` exclusions documented in README.

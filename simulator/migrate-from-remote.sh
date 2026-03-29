@@ -4,8 +4,9 @@
 
 set -e
 
-REMOTE_HOST="${REMOTE_HOST:-10.5.40.109}"
-REMOTE_USER="${REMOTE_USER:-rak}"
+# Override before running, e.g. REMOTE_HOST=your.lab.host REMOTE_USER=you ./migrate-from-remote.sh
+REMOTE_HOST="${REMOTE_HOST:-192.0.2.10}"
+REMOTE_USER="${REMOTE_USER:-your-user}"
 REMOTE_PATH="/tmp/lorawan_gateway_sim"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEST_DIR="$SCRIPT_DIR"

@@ -114,7 +114,7 @@ node scripts/lorasim-cli.mjs help
 
 ```bash
 # 启动模拟器（支持把额外 simulator 参数放在 -- 之后）
-node scripts/lorasim-cli.mjs run -c simulator/configs/example-extends-chirpstack.json -- --lns-host 10.0.0.3
+node scripts/lorasim-cli.mjs run -c simulator/configs/example-extends-chirpstack.json -- --lns-host 127.0.0.1
 
 # 校验配置
 node scripts/lorasim-cli.mjs validate -c simulator/configs/example-extends-chirpstack.json -p multigw

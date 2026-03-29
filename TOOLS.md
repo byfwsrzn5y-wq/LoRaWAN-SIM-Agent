@@ -6,24 +6,26 @@ Skills define _how_ tools work. This file is for _your_ specifics — the stuff 
 
 ## LoRaWAN-SIM 环境
 
+> 下表为**占位示例**（便于粘贴命令结构）；请替换为你自己的主机、端口与 ChirpStack 控制台中的 UUID。
+
 ### SSH
 
 | 别名 | 主机 | 用户 | 说明 |
 |------|------|------|------|
-| lorawan-host | 10.5.40.109 | rak | 仿真器运行主机 |
+| lorawan-host | 192.0.2.10 | your-user | 仿真器运行主机（示例 IP，RFC 5737 文档网段） |
 
 ```bash
-ssh -o StrictHostKeyChecking=no rak@10.5.40.109
+ssh -o StrictHostKeyChecking=no your-user@192.0.2.10
 ```
 
 ### ChirpStack
 
 | 组件 | 地址 | 说明 |
 |------|------|------|
-| API | http://10.5.40.109:8090/api | 需 Bearer Token |
-| Gateway Bridge | 10.0.0.3:1702 (UDP) | AS923 区域（Semtech UDP → Bridge） |
-| 应用 ID | a9bede28-bb45-421e-9cfa-5824d27a4133 | 测试应用 |
-| Device Profile | 85387f55-b6ec-48b8-90c6-aa0fa0f73c0e | LoRaWAN 1.0.3 OTAA |
+| API | http://127.0.0.1:8090/api | 需 Bearer Token |
+| Gateway Bridge | 127.0.0.1:1702 (UDP) | AS923 区域（Semtech UDP → Bridge） |
+| 应用 ID | 00000000-0000-4000-8000-0000000000aa | 测试应用（占位） |
+| Device Profile | 00000000-0000-4000-8000-0000000000bb | LoRaWAN 1.0.3 OTAA（占位） |
 
 ### 常用命令
 
@@ -47,13 +49,13 @@ node /tmp/clear_all_activations.js
 ### 注册新设备 (ChirpStack API)
 
 ```bash
-curl -X POST http://10.5.40.109:8090/api/devices \
+curl -X POST http://127.0.0.1:8090/api/devices \
   -H "Authorization: Bearer <TOKEN>" \
   -H "Content-Type: application/json" \
   -d '{
     "device": {
-      "applicationId": "a9bede28-bb45-421e-9cfa-5824d27a4133",
-      "deviceProfileId": "85387f55-b6ec-48b8-90c6-aa0fa0f73c0e",
+      "applicationId": "00000000-0000-4000-8000-0000000000aa",
+      "deviceProfileId": "00000000-0000-4000-8000-0000000000bb",
       "name": "test-node-XX",
       "devEui": "69AE9F1F000100XX",
       "joinEui": "0000000000000000"

@@ -2,7 +2,7 @@
   "gatewayEui": "0203040506070809",
   "udp": {
     "enabled": true,
-    "server": "10.5.40.109:1703"
+    "server": "127.0.0.1:1703"
   },
   "lorawan": {
     "enabled": true,

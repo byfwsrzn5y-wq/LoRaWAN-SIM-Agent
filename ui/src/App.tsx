@@ -737,7 +737,7 @@ export default function App() {
             environment: signalModel?.environment,
             shadowFadingStd: Number(signalModel?.shadowFadingStd ?? 8),
             fastFadingEnabled: Boolean(signalModel?.fastFadingEnabled ?? true),
-            chirpstackBaseUrl: String((data as { config?: { chirpstack?: { baseUrl?: string } } } | undefined)?.config?.chirpstack?.baseUrl || 'http://10.0.0.3:8090'),
+            chirpstackBaseUrl: String((data as { config?: { chirpstack?: { baseUrl?: string } } } | undefined)?.config?.chirpstack?.baseUrl || 'http://127.0.0.1:8090'),
             chirpstackApiToken: '',
             chirpstackAuthHeader: String((data as { config?: { chirpstack?: { authHeader?: string } } } | undefined)?.config?.chirpstack?.authHeader || 'Grpc-Metadata-Authorization'),
             chirpstackApplicationId: String((data as { config?: { chirpstack?: { applicationId?: string } } } | undefined)?.config?.chirpstack?.applicationId || '540a999c-9eeb-4c5c-bed1-778dacddaf46'),
