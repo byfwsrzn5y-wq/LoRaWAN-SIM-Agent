@@ -141,6 +141,11 @@
 
 ```
 LoRaWAN-SIM/
+├── README.md                      # 默认首页（英文）
+├── README.zh-CN.md                # 简体中文 README
+├── .github/
+│   ├── workflows/ci.yml           # CI
+│   └── GITHUB_ABOUT.md            # GitHub 仓库 About 栏复制用文案
 ├── simulator/
 │   ├── index.js                   # 核心代码（生产/ChirpStack 联调入口）
 │   ├── main.js                    # 弃用：转发 index.js

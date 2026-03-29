@@ -1,6 +1,6 @@
 # LoRaWAN-SIM 文档索引
 
-仓库级文档入口：与根目录 [`README.md`](../README.md)、[`PROJECT.md`](../PROJECT.md) 并列；模拟器实操与中文说明见 [`simulator/docs/README.md`](../simulator/docs/README.md)。
+仓库级文档入口：根目录默认 **[`README.md`](../README.md)（英文）**、[`README.zh-CN.md`](../README.zh-CN.md)（简体中文）、[`PROJECT.md`](../PROJECT.md)；模拟器实操与中文说明见 [`simulator/docs/README.md`](../simulator/docs/README.md)。GitHub 仓库页 **About** 栏可复制文案见 [`.github/GITHUB_ABOUT.md`](../.github/GITHUB_ABOUT.md)。
 
 ---
 
@@ -10,7 +10,8 @@
 |------|------|
 | [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) | 向 `main` / `master` 的 push 与 PR：语法检查、模块冒烟、OpenClaw 路径解析冒烟、`ui` 安装与构建 |
 | [`.gitignore`](../.gitignore) | 忽略 `.env`、`.cursor/`、`memory/`、`.openclaw/` 与本地运行产物等（详见文件内注释） |
-| 根 [`README.md`](../README.md) §「Git 与持续集成」 | 分支约定、与本地「上传前检查」命令对齐 |
+| 根 [`README.md`](../README.md) §「Git 与持续集成」 | 分支约定、与本地「上传前检查」命令对齐（默认英文首页；中文见 [`README.zh-CN.md`](../README.zh-CN.md)） |
+| [`.github/GITHUB_ABOUT.md`](../.github/GITHUB_ABOUT.md) | GitHub 仓库 **About** 简介 / Topics 复制用 |
 
 ---
 
