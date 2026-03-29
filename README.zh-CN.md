@@ -8,6 +8,59 @@
 
 ---
 
+## 能力总览（本项目能做什么）
+
+本项目用软件**模拟 LoRaWAN 终端与网关**，把**空口流量**以 Semtech UDP / MQTT Gateway Bridge 等形式送到**网络服务器**（通常为 **ChirpStack v4**），并支持**可重复的异常注入**与**可观测状态**——无需真实射频硬件即可做联调、教学与排障。
+
+### 核心 LoRaWAN 模拟
+
+- **LoRaWAN 1.0.x** 设备侧行为：**OTAA / ABP**、Join Request / Join Accept、上下行数据、**FCnt**、**MIC**、DevAddr 及常用 **MAC 命令**（细节见 [`simulator/README.md`](simulator/README.md)）。
+- **网关侧路径**：**Semtech UDP Packet Forwarder** 与 **MQTT Gateway Bridge** 风格（主题、JSON/Protobuf 等），与 ChirpStack 常见接入方式对齐。
+- **多设备**：由配置或 CSV 批量生成设备，独立上行调度，支持**行为模板**、Confirmed 上行及间隔/抖动/突发等参数。
+- **多网关**：多网关 EUI、位置、覆盖模式及网关选择/负载类行为（见 [`simulator/README.md`](simulator/README.md)）。
+
+### 射频与信道（软件模型）
+
+- **传播与场景**：如 Okumura–Hata / COST-231 类路径损耗、城郊/室内等环境、**阴影/快衰落**、底噪，以及每次上行的 **RSSI/SNR**，便于联调 ADR 与网管展示。
+- 配置开启时可选**运动**、**环境区**与**衍生异常**（`index.js` + 运行时模块；见 [`docs/PROJECT_ANALYSIS.md`](docs/PROJECT_ANALYSIS.md)）。
+
+### 异常注入（测试与演示）
+
+- **18 类具名异常**（`anomaly_module.js` 为 SSOT）：协议类（如 FCnt、MIC、DevAddr）、射频类（信号、频率、DR）与行为类（入网、流量模式等），用于**稳定复现**告警、掉线、错误负载等场景。
+- 与监测/响应说明对照：[`docs/DETECTION_RULES.md`](docs/DETECTION_RULES.md)、[`docs/ANOMALY_RESPONSE.md`](docs/ANOMALY_RESPONSE.md)、[`simulator/docs/异常行为模板参考.md`](simulator/docs/异常行为模板参考.md)。
+
+### 可观测性
+
+- 持续写入 **`sim-state.json`**（契约见 [`schemas/sim-state-v1.schema.json`](schemas/sim-state-v1.schema.json)）：入网、节点/网关、计数与错误统计，可供脚本、CI 或 UI 读取——**不启动 UI 也可完整跑模拟器**。
+
+### ChirpStack 与运维
+
+- [`chirpstack-docker-multi-region-master/`](chirpstack-docker-multi-region-master/) 提供参考 **Docker** 栈，便于本地起 ChirpStack 与 Bridge。
+- 根目录 **CLI** [`scripts/lorasim-cli.mjs`](scripts/lorasim-cli.mjs)：`validate`、`run`、**`cs-*`** 等，按 JSON 与 [`.env.example`](.env.example) **核对/登记网关与 OTAA 设备**。
+- 可选 **真实拓扑**：合并 ChirpStack REST 清单与 MQTT **`rxInfo`**，在 UI 画布上展示节点—网关关系（见 [`docs/LORAWAN_SIM_CHIRPSTACK_UI_STATE_MACHINE.md`](docs/LORAWAN_SIM_CHIRPSTACK_UI_STATE_MACHINE.md)）。
+- **双写编排**（受特性开关控制）：在模拟器与 ChirpStack 侧同步创建/更新资源，带重试与冲突处理（详见 `docs/` 下编排类文档）。
+
+### 控制面 HTTP API 与 Web UI
+
+- 启用 **`controlServer`** 后提供 JSON 化 **HTTP API**：**`/resources/*`**（节点/网关/仿真参数）、**`/layout/apply`**、**`/sync/retry`**、**`/config-profiles/*`**，以及拓扑用的 **`POST /chirpstack/refresh-inventory`**。
+- 可选 **[`ui/`](ui/)**（Vite + React）：画布、Scenario、配置档案与同步状态，见 [`ui/README.md`](ui/README.md)。
+
+### Agent 与自动化
+
+- **[`simulator/openclaw-lorawan-sim/`](simulator/openclaw-lorawan-sim/)** **OpenClaw 插件**：向 Agent 注册工具（启停、配置、ChirpStack 相关操作），见 [`docs/OPENCLAW_QUICKSTART.md`](docs/OPENCLAW_QUICKSTART.md)。
+- 可选 **[`simulator/discord-bot/`](simulator/discord-bot/)** 对话控制。
+- **`diagnose.js`** 与 [`scripts/`](scripts/) 下清单/预置脚本支持运维检查。
+
+### 配置与校验
+
+- **单一 JSON** 配置，支持 **`extends` / preset**，并由 [`schemas/lorasim-config.schema.json`](schemas/lorasim-config.schema.json) 约束；字段说明见 [`docs/CONFIG_MAP.md`](docs/CONFIG_MAP.md)。
+
+### 本项目不覆盖的范围
+
+- **不能替代**射频认证、法规测试或真实空口测量；定位为 **协议与 LNS 集成向**的模拟器，服务于**开发联调、集成测试、教学**与**可重复故障注入**。
+
+---
+
 ## 前置条件
 
 - **Node.js**：建议 ≥ 18（CI 使用 Node 20）。

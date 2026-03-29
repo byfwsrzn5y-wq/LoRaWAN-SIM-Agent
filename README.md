@@ -8,6 +8,59 @@ Open-source **LoRaWAN device and gateway simulator** (LoRaWAN 1.0.3) for integra
 
 ---
 
+## Capabilities (what this project can do)
+
+Use this project to **emulate LoRaWAN end devices and gateways in software**, drive **real or simulated airtime** toward a **network server** (typically **ChirpStack v4**), and **observe or break** behavior on purpose—without physical radios.
+
+### Core LoRaWAN simulation
+
+- **LoRaWAN 1.0.x** device behavior: **OTAA** and **ABP**, Join Request / Join Accept, uplink data and downlink, **FCnt**, **MIC**, DevAddr, and common **MAC commands** (stack details in [`simulator/README.md`](simulator/README.md)).
+- **Gateway path**: **Semtech UDP packet forwarder** and **MQTT Gateway Bridge**-style flows (publish/subscribe topics, JSON or Protobuf where configured) so traffic matches what ChirpStack expects.
+- **Multi-device**: generate many devices from config or CSV, per-device uplink timing, optional **behavior templates**, confirmed uplinks, and scheduling options (interval, jitter, bursts).
+- **Multi-gateway**: multiple gateway EUIs, placement, coverage modes, and gateway selection / load-style behavior (see [`simulator/README.md`](simulator/README.md)).
+
+### RF and channel behavior (software model)
+
+- **Path loss and environment**: e.g. Okumura–Hata / COST-231-style modeling, urban/suburban/indoor-style loss, **shadow** and **fast fading**, noise floor, and per-uplink **RSSI/SNR** suitable for testing ADR-like effects and dashboards.
+- Optional **movement**, **environment zones**, and **derived anomalies** when enabled in config (`index.js` + runtime modules; see [`docs/PROJECT_ANALYSIS.md`](docs/PROJECT_ANALYSIS.md)).
+
+### Anomaly injection (testing and demos)
+
+- **18 named anomaly scenarios** (single source of truth in `anomaly_module.js`): protocol issues (e.g. FCnt, MIC, DevAddr), RF-like issues (signal, frequency, data rate), and behavior patterns (join and traffic). Use them to reproduce alarms, dropped joins, or bad payloads **deterministically**.
+- Cross-reference: [`docs/DETECTION_RULES.md`](docs/DETECTION_RULES.md), [`docs/ANOMALY_RESPONSE.md`](docs/ANOMALY_RESPONSE.md), [`simulator/docs/异常行为模板参考.md`](simulator/docs/异常行为模板参考.md).
+
+### Observability
+
+- Continuous **`sim-state.json`** snapshot (schema in [`schemas/sim-state-v1.schema.json`](schemas/sim-state-v1.schema.json)): joins, nodes, gateways, counters, and error stats for scripts, CI, or the UI—**no UI required** to run the simulator.
+
+### ChirpStack integration and operations
+
+- Reference **Docker** stack under [`chirpstack-docker-multi-region-master/`](chirpstack-docker-multi-region-master/) to bring up ChirpStack and bridges locally.
+- Root **CLI** [`scripts/lorasim-cli.mjs`](scripts/lorasim-cli.mjs): `validate`, `run`, and **`cs-*`** helpers to **check/apply gateways and OTAA devices** from JSON aligned with your `.env` (see [`.env.example`](.env.example)).
+- Optional **live topology**: merge ChirpStack REST inventory with simulator state and MQTT **`rxInfo`** for a **realistic map** of node–gateway links in the UI (documented in [`docs/LORAWAN_SIM_CHIRPSTACK_UI_STATE_MACHINE.md`](docs/LORAWAN_SIM_CHIRPSTACK_UI_STATE_MACHINE.md)).
+- **Dual-write orchestration** (feature-flagged): create/update nodes and gateways in the simulator and optionally in ChirpStack with retries and conflict handling (see `docs/` orchestration specs).
+
+### Control-plane HTTP API and web UI
+
+- When **`controlServer`** is enabled, JSON-configurable **HTTP APIs** including **`/resources/*`** (nodes/gateways/simulation), **`/layout/apply`**, **`/sync/retry`**, **`/config-profiles/*`**, and **`POST /chirpstack/refresh-inventory`** for topology refresh.
+- Optional **[`ui/`](ui/)** (Vite + React): canvas, scenario editor, profile save/load, and sync status—see [`ui/README.md`](ui/README.md).
+
+### Agents and automation
+
+- **[`simulator/openclaw-lorawan-sim/`](simulator/openclaw-lorawan-sim/)** OpenClaw **plugin** exposing tools to agents (start/stop simulator, config, ChirpStack-oriented actions)—see [`docs/OPENCLAW_QUICKSTART.md`](docs/OPENCLAW_QUICKSTART.md).
+- Optional **[`simulator/discord-bot/`](simulator/discord-bot/)** for chat-driven control.
+- **`diagnose.js`** and inventory scripts under [`scripts/`](scripts/) for operational checks.
+
+### Configuration and validation
+
+- **Single JSON** model with **`extends` / presets**, validated against [`schemas/lorasim-config.schema.json`](schemas/lorasim-config.schema.json); field map in [`docs/CONFIG_MAP.md`](docs/CONFIG_MAP.md).
+
+### What this project is not
+
+- It does **not** replace **hardware RF certification** or regulatory measurements; it is a **protocol and LNS integration** simulator for **development, integration testing, teaching, and repeatable fault injection**.
+
+---
+
 ## Prerequisites
 
 - **Node.js**: ≥ 18 recommended (CI uses Node 20).

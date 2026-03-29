@@ -9,7 +9,7 @@ GitHub does **not** read this file automatically. Copy the values below into the
 ## Description (short — paste into About)
 
 ```
-LoRaWAN device & gateway simulator (1.0.x) for integration tests and teaching. Optional ChirpStack v4, React control UI, OpenClaw plugin, multi-gateway.
+LoRaWAN device & gateway simulator (LoRaWAN 1.0.x): OTAA/ABP, UDP/MQTT GW bridge, multi-gateway, 18 anomaly scenarios, sim-state observability. Optional ChirpStack v4, REST orchestration API, React UI, OpenClaw plugin.
 ```
 
 *(Single line; you may shorten further if needed.)*
