@@ -2,6 +2,12 @@
 
 仓库级文档入口：根目录默认 **[`README.md`](../README.md)（英文）**、[`README.zh-CN.md`](../README.zh-CN.md)（简体中文）、[`PROJECT.md`](../PROJECT.md)；模拟器实操与中文说明见 [`simulator/docs/README.md`](../simulator/docs/README.md)。GitHub 仓库页 **About** 栏可复制文案见 [`.github/GITHUB_ABOUT.md`](../.github/GITHUB_ABOUT.md)。
 
+### Web 控制台界面一览
+
+以下为可选 **`ui/`** 控制台运行示意：拓扑画布（节点—网关与距离）、左侧网关/节点列表、右侧 Inspector、底部最近报文与活动日志；需模拟器开启 `controlServer` 并按需配置 ChirpStack 相关能力。启动方式见根目录 [`README.md`](../README.md) 与 [`ui/README.md`](../ui/README.md)。
+
+![LoRaWAN-SIM Web 控制台：拓扑、Inspector、报文与活动日志](images/ui-console-screenshot.png)
+
 ---
 
 ## 版本控制与 CI
