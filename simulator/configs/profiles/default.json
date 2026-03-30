@@ -1,6 +1,6 @@
 {
   "name": "default",
-  "savedAt": "2026-03-28T23:04:36.992Z",
+  "savedAt": "2026-03-30T13:17:26.785Z",
   "devices": [
     {
       "name": "sim-node-0001",
@@ -11,8 +11,8 @@
       "interval": 10,
       "fPort": 2,
       "location": {
-        "x": 541.62890625,
-        "y": 344,
+        "x": 400,
+        "y": 300,
         "z": 2
       },
       "adr": true,
@@ -40,8 +40,8 @@
       "interval": 10,
       "fPort": 2,
       "location": {
-        "x": 817.31640625,
-        "y": 680.1875,
+        "x": 400,
+        "y": 300,
         "z": 2
       },
       "adr": true,
@@ -69,8 +69,8 @@
       "interval": 10,
       "fPort": 2,
       "location": {
-        "x": 164.87890625,
-        "y": 825.25,
+        "x": 400,
+        "y": 300,
         "z": 2
       },
       "adr": true,
@@ -98,8 +98,8 @@
       "interval": 10,
       "fPort": 2,
       "location": {
-        "x": 719,
-        "y": 851.375,
+        "x": 400,
+        "y": 300,
         "z": 2
       },
       "adr": true,
@@ -127,8 +127,8 @@
       "interval": 10,
       "fPort": 2,
       "location": {
-        "x": 334.00390625,
-        "y": 850,
+        "x": 400,
+        "y": 300,
         "z": 2
       },
       "adr": true,
@@ -156,8 +156,8 @@
       "interval": 10,
       "fPort": 2,
       "location": {
-        "x": 732.06640625,
-        "y": 542,
+        "x": 400,
+        "y": 300,
         "z": 2
       },
       "adr": true,
@@ -185,8 +185,8 @@
       "interval": 10,
       "fPort": 2,
       "location": {
-        "x": 723.12890625,
-        "y": 139.8125,
+        "x": 400,
+        "y": 300,
         "z": 2
       },
       "adr": true,
@@ -214,8 +214,8 @@
       "interval": 10,
       "fPort": 2,
       "location": {
-        "x": 377.31640625,
-        "y": 155.625,
+        "x": 547.03515625,
+        "y": 181.07421875,
         "z": 2
       },
       "adr": true,
@@ -243,8 +243,8 @@
       "interval": 10,
       "fPort": 2,
       "location": {
-        "x": 129.12890625,
-        "y": 277.3125,
+        "x": 579.12890625,
+        "y": 499.92578125,
         "z": 2
       },
       "adr": true,
@@ -272,8 +272,8 @@
       "interval": 10,
       "fPort": 2,
       "location": {
-        "x": 118.12890625,
-        "y": 603.1875,
+        "x": 194.18359375,
+        "y": 153.12109375,
         "z": 2
       },
       "adr": true,
@@ -281,8 +281,8 @@
       "devStatus": false,
       "duplicateFirstData": false,
       "anomaly": {
-        "enabled": true,
-        "scenario": "signal-weak",
+        "enabled": false,
+        "scenario": "fcnt-duplicate",
         "trigger": "always",
         "params": {}
       },
@@ -302,8 +302,8 @@
         "eui": "19023c6b00000000",
         "name": "gw-apex-sw",
         "position": {
-          "x": 340.6328125,
-          "y": 455.4375,
+          "x": 169.3046875,
+          "y": 497.59375,
           "z": 30
         },
         "rxGain": 5,
@@ -316,7 +316,7 @@
             "simulator"
           ],
           "lastError": null,
-          "updatedAt": "2026-03-28T07:10:23.234Z"
+          "updatedAt": "2026-03-30T11:38:30.005Z"
         }
       },
       {
@@ -403,7 +403,7 @@
     "autoStart": true,
     "gateway": {
       "gatewayEui": "19023c6b00000000",
-      "address": "127.0.0.1",
+      "address": "10.0.0.3",
       "port": 1702
     },
     "region": "AS923",
@@ -423,7 +423,7 @@
     "csvImportPath": "configs/otaa-100-devices.csv"
   },
   "chirpstack": {
-    "baseUrl": "http://127.0.0.1:8090",
+    "baseUrl": "http://10.0.0.3:8090",
     "authHeader": "Grpc-Metadata-Authorization",
     "applicationId": "540a999c-9eeb-4c5c-bed1-778dacddaf46",
     "deviceProfileId": "a1b2c3d4-1111-2222-3333-444444444444",
@@ -435,10 +435,11 @@
       "enabled": true,
       "server": "",
       "username": ""
-    }
+    },
+    "apiToken": ""
   },
   "gatewayEui": "19023c6b00000000",
-  "lnsHost": "127.0.0.1",
+  "lnsHost": "10.0.0.3",
   "lnsPort": 1702,
   "udpBindPort": 0,
   "mqtt": {

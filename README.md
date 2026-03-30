@@ -153,6 +153,12 @@ npm install
 npm run dev
 ```
 
+Recommended for local development: restart simulator + UI together from repo root:
+
+```bash
+./scripts/restart-dev-services.sh
+```
+
 Vite proxies API calls to `VITE_CONTROL_PROXY_TARGET` (default `http://127.0.0.1:9999`). See [`ui/README.md`](ui/README.md).
 
 **ChirpStack live topology (optional)**: with `chirpstack.topologyEnabled: true` (or `ENABLE_CHIRPSTACK_TOPOLOGY=true`) and a REST API token, the control plane merges ChirpStack devices/gateways into `GET /sim-state` and draws node–gateway edges using MQTT integration `rxInfo`. Use the **Scenario** panel and **Refresh** in the UI; see [`simulator/docs/使用指南.md`](simulator/docs/使用指南.md) §5.1 and [`docs/LORAWAN_SIM_CHIRPSTACK_UI_STATE_MACHINE.md`](docs/LORAWAN_SIM_CHIRPSTACK_UI_STATE_MACHINE.md).
