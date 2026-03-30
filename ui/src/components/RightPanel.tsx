@@ -239,8 +239,23 @@ export function RightPanel({
         {view.type === 'none' && (
           <p className="text-slate-500">Select a node or gateway, or add a new resource from the left panel.</p>
         )}
-        {view.type === 'addNode' && <NodeForm busy={busy} nodes={nodes} onSubmit={onCreateNode} />}
-        {view.type === 'addGateway' && <GatewayForm busy={busy} gateways={gateways} onSubmit={onCreateGateway} />}
+        {view.type === 'addNode' && (
+          <NodeForm
+            busy={busy}
+            nodes={nodes}
+            onSubmit={onCreateNode}
+            defaultCsApplicationId={configSnapshot?.chirpstackApplicationId || ''}
+            defaultCsDeviceProfileId={configSnapshot?.chirpstackDeviceProfileId || ''}
+          />
+        )}
+        {view.type === 'addGateway' && (
+          <GatewayForm
+            busy={busy}
+            gateways={gateways}
+            onSubmit={onCreateGateway}
+            defaultCsTenantId={configSnapshot?.chirpstackTenantId ?? ''}
+          />
+        )}
         {view.type === 'node' &&
           ((view.node.source || 'simulator') === 'chirpstack' ? (
             <ChirpstackNodeInspector node={view.node} />
@@ -252,6 +267,8 @@ export function RightPanel({
               node={view.node}
               onSubmit={(payload) => onUpdateNode(view.node.eui, payload)}
               onDelete={(mode) => onDeleteNode(view.node.eui, mode)}
+              defaultCsApplicationId={configSnapshot?.chirpstackApplicationId || ''}
+              defaultCsDeviceProfileId={configSnapshot?.chirpstackDeviceProfileId || ''}
             />
           ))}
         {view.type === 'gateway' &&
@@ -265,6 +282,7 @@ export function RightPanel({
               gateway={view.gateway}
               onSubmit={(payload) => onUpdateGateway(view.gateway.eui || view.gateway.id || '', payload)}
               onDelete={(mode) => onDeleteGateway(view.gateway.eui || view.gateway.id || '', mode)}
+              defaultCsTenantId={configSnapshot?.chirpstackTenantId ?? ''}
             />
           ))}
         {view.type === 'scenario' && (
@@ -330,12 +348,16 @@ function NodeForm({
   busy,
   onSubmit,
   onDelete,
+  defaultCsApplicationId,
+  defaultCsDeviceProfileId,
 }: {
   nodes?: SimNode[]
   node?: SimNode
   busy?: boolean
   onSubmit: (payload: NodeResourcePayload & { devEui: string; batchCount?: number }) => Promise<void>
   onDelete?: (mode: string) => Promise<void>
+  defaultCsApplicationId?: string
+  defaultCsDeviceProfileId?: string
 }) {
   const b = syncStatusToBadge(node?.syncStatus)
   const p = node?.position || { x: 400, y: 300, z: 2 }
@@ -361,8 +383,8 @@ function NodeForm({
   const [adrReject, setAdrReject] = useState(Boolean(node?.adrReject))
   const [devStatus, setDevStatus] = useState(Boolean(node?.devStatus))
   const [duplicateFirstData, setDuplicateFirstData] = useState(Boolean(node?.duplicateFirstData))
-  const [csApplicationId, setCsApplicationId] = useState('')
-  const [csDeviceProfileId, setCsDeviceProfileId] = useState('')
+  const [csApplicationId, setCsApplicationId] = useState(defaultCsApplicationId || '')
+  const [csDeviceProfileId, setCsDeviceProfileId] = useState(defaultCsDeviceProfileId || '')
   const [csAppKey, setCsAppKey] = useState('')
   const [anomalyJson, setAnomalyJson] = useState(toJsonText(node?.anomaly))
   const anomalyObj = (parseJson(anomalyJson) as Record<string, unknown> | undefined) || {}
@@ -628,16 +650,18 @@ function GatewayForm({
   busy,
   onSubmit,
   onDelete,
+  defaultCsTenantId,
 }: {
   gateways?: SimGateway[]
   gateway?: SimGateway
   busy?: boolean
   onSubmit: (payload: GatewayResourcePayload & { gatewayId: string }) => Promise<void>
   onDelete?: (mode: string) => Promise<void>
+  defaultCsTenantId?: string
 }) {
   const b = syncStatusToBadge(gateway?.syncStatus)
   const p = gateway?.position || { x: 200, y: 120, z: 30 }
-  const [mode, setMode] = useState('simulator_only')
+  const [mode, setMode] = useState('sync_both')
   const suggestedGatewayId = useMemo(() => nextGatewayEui(gateways), [gateways])
   const [gatewayId, setGatewayId] = useState(gateway?.eui || gateway?.id || suggestedGatewayId)
   const [name, setName] = useState(gateway?.name || `gw-${suggestedGatewayId.slice(-4)}`)
@@ -648,7 +672,7 @@ function GatewayForm({
   const [rxSensitivity, setRxSensitivity] = useState(typeof gateway?.rxSensitivity === 'number' ? gateway.rxSensitivity : -137)
   const [cableLoss, setCableLoss] = useState(typeof gateway?.cableLoss === 'number' ? gateway.cableLoss : 0.5)
   const [noiseFloor, setNoiseFloor] = useState(typeof gateway?.noiseFloor === 'number' ? gateway.noiseFloor : -100)
-  const [csTenantId, setCsTenantId] = useState('')
+  const [csTenantId, setCsTenantId] = useState(defaultCsTenantId ?? '')
 
   return (
     <form
@@ -730,7 +754,7 @@ function ScenarioForm({
   config?: RightPanelProps['configSnapshot']
   onSubmit: (payload: ScenarioResourcePayload) => Promise<void>
 }) {
-  const [mode, setMode] = useState('simulator_only')
+  const [mode, setMode] = useState('sync_both')
   const [multiGatewayMode, setMultiGatewayMode] = useState(config?.multiGatewayMode || 'overlapping')
   const [primaryGateway, setPrimaryGateway] = useState(config?.primaryGateway || gateways[0]?.eui || '')
   const [txPower, setTxPower] = useState(config?.txPower ?? 16)
@@ -741,9 +765,9 @@ function ScenarioForm({
   const [chirpstackBaseUrl, setChirpstackBaseUrl] = useState(config?.chirpstackBaseUrl || 'http://127.0.0.1:8090')
   const [chirpstackApiToken, setChirpstackApiToken] = useState(config?.chirpstackApiToken || '')
   const [chirpstackAuthHeader, setChirpstackAuthHeader] = useState(config?.chirpstackAuthHeader || 'Grpc-Metadata-Authorization')
-  const [chirpstackApplicationId, setChirpstackApplicationId] = useState(config?.chirpstackApplicationId || '540a999c-9eeb-4c5c-bed1-778dacddaf46')
-  const [chirpstackDeviceProfileId, setChirpstackDeviceProfileId] = useState(config?.chirpstackDeviceProfileId || 'a1b2c3d4-1111-2222-3333-444444444444')
-  const [chirpstackTenantId, setChirpstackTenantId] = useState(config?.chirpstackTenantId || '81d48efb-6216-4c7f-8c21-46a5eac9d737')
+  const [chirpstackApplicationId, setChirpstackApplicationId] = useState(config?.chirpstackApplicationId ?? '540a999c-9eeb-4c5c-bed1-778dacddaf46')
+  const [chirpstackDeviceProfileId, setChirpstackDeviceProfileId] = useState(config?.chirpstackDeviceProfileId ?? 'a1b2c3d4-1111-2222-3333-444444444444')
+  const [chirpstackTenantId, setChirpstackTenantId] = useState(config?.chirpstackTenantId ?? '81d48efb-6216-4c7f-8c21-46a5eac9d737')
   const [chirpstackTopologyEnabled, setChirpstackTopologyEnabled] = useState(Boolean(config?.chirpstackTopologyEnabled))
   const [chirpstackInventoryPollSec, setChirpstackInventoryPollSec] = useState(
     config?.chirpstackInventoryPollSec != null ? Number(config.chirpstackInventoryPollSec) : 60,

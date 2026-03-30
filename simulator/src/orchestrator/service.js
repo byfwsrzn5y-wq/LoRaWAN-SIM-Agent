@@ -100,8 +100,10 @@ class OrchestratorService {
     }
   }
 
-  _syncOk() {
-    return { state: 'synced', targets: ['chirpstack', 'simulator'], lastError: null, updatedAt: new Date().toISOString() };
+  _syncOk({ chirpstackSynced = true } = {}) {
+    const targets = ['simulator'];
+    if (chirpstackSynced) targets.unshift('chirpstack');
+    return { state: 'synced', targets, lastError: null, updatedAt: new Date().toISOString() };
   }
 
   _syncError(code, message, retryable = true) {
@@ -279,28 +281,220 @@ class OrchestratorService {
     return Boolean(live && Array.isArray(live.receptions) && live.receptions.length);
   }
 
+  _stringTrim(v) {
+    return String(v == null ? '' : v).trim();
+  }
+
+  _pickFirstIdFromList(json, listKeys, idKeys = ['id', 'applicationId', 'deviceProfileId']) {
+    if (!json || typeof json !== 'object') return '';
+    for (const k of listKeys) {
+      const arr = json[k];
+      if (Array.isArray(arr) && arr.length) {
+        const first = arr[0] || {};
+        for (const idKey of idKeys) {
+          const candidate = first[idKey];
+          if (candidate) return String(candidate).trim();
+        }
+        if (first.id) return String(first.id).trim();
+      }
+    }
+    return '';
+  }
+
+  async _chirpstackEnsureApplicationId(baseUrl, authHeader, token, tenantId, preferredAppId) {
+    // Strategy:
+    // - If preferredAppId exists (non-empty) we still might fail later, so this method returns it only when it is present in list.
+    // - Otherwise pick the first existing application under tenant.
+    // - If tenant has no applications, auto-create one.
+    const pid = this._stringTrim(preferredAppId);
+    if (!tenantId) throw createError(ERROR_CODES.CHIRPSTACK_FAILED, 'Missing tenantId for application auto-create');
+
+    // Try to find preferred app in tenant list (first page).
+    if (pid) {
+      const listRes = await csFetch(
+        baseUrl,
+        authHeader,
+        token,
+        `/api/applications?tenantId=${encodeURIComponent(tenantId)}&limit=200&offset=0`
+      );
+      if (listRes.ok) {
+        const found = this._pickFirstIdFromList(listRes.json, ['result', 'applications'], ['id', 'applicationId']);
+        // If listRes returned a first id but not matching pid, ignore; we will fall back to "first existing" below.
+        if (found && found.toLowerCase() === pid.toLowerCase()) return pid;
+      }
+    }
+
+    const listRes = await csFetch(
+      baseUrl,
+      authHeader,
+      token,
+      `/api/applications?tenantId=${encodeURIComponent(tenantId)}&limit=1&offset=0`
+    );
+    if (listRes.ok) {
+      const firstId = this._pickFirstIdFromList(listRes.json, ['result', 'applications'], ['id', 'applicationId']);
+      if (firstId) return firstId;
+    }
+
+    const createName = 'LoRaWAN-SIM auto';
+    const createBody = {
+      application: {
+        tenantId,
+        name: createName,
+        description: 'Auto-created by LoRaWAN-SIM UI (ensure applicationId for device provisioning).',
+      },
+    };
+    const createRes = await csFetch(baseUrl, authHeader, token, '/api/applications', 'POST', createBody);
+    if (!createRes.ok) {
+      const hint = String(createRes.text || createRes.json || '').slice(0, 500);
+      throw createError(ERROR_CODES.CHIRPSTACK_FAILED, `Auto-create application failed (${createRes.status}): ${hint}`);
+    }
+    const createdId = this._stringTrim(createRes.json?.id);
+    if (!createdId) throw createError(ERROR_CODES.CHIRPSTACK_FAILED, 'Auto-create application returned empty id');
+    return createdId;
+  }
+
+  async _chirpstackEnsureDeviceProfileId(baseUrl, authHeader, token, tenantId, preferredProfileId, node) {
+    const pid = this._stringTrim(preferredProfileId);
+    if (!tenantId) throw createError(ERROR_CODES.CHIRPSTACK_FAILED, 'Missing tenantId for deviceProfile auto-create');
+
+    // Try preferred id by direct GET first.
+    if (pid) {
+      const getPath = `/api/device-profiles/${encodeURIComponent(pid)}`;
+      const gr = await csFetch(baseUrl, authHeader, token, getPath);
+      if (gr.ok) return pid;
+    }
+
+    // Pick first existing device profile under tenant.
+    const listRes = await csFetch(
+      baseUrl,
+      authHeader,
+      token,
+      `/api/device-profiles?tenantId=${encodeURIComponent(tenantId)}&limit=1&offset=0`
+    );
+    if (listRes.ok) {
+      const firstId = this._pickFirstIdFromList(listRes.json, ['result', 'deviceProfiles'], ['id', 'deviceProfileId']);
+      if (firstId) return firstId;
+    }
+
+    // Auto-create a minimal OTAA-capable device profile (based on simulator config defaults).
+    const config = this.getConfig() || {};
+    const region = this._stringTrim(config.lorawan?.region || config.simulation?.region || 'AS923');
+    const macVersion = this._stringTrim(config.lorawan?.macVersion || 'LORAWAN_1_0_4');
+    const regParamsRevision = this._stringTrim(
+      (macVersion.includes('1_1_0') ? 'RP002_1_0_4' : 'RP002_1_0_3') || 'RP002_1_0_3'
+    );
+
+    const intervalMsReq = node?.radio && typeof node.radio === 'object' ? Number(node.radio.intervalMs) : null;
+    const uplinkInterval = Number.isFinite(intervalMsReq) && intervalMsReq > 0 ? Math.max(1, Math.round(intervalMsReq / 1000)) : 60;
+
+    // ADR algorithm: pick first available if possible.
+    let adrAlgorithmId = 'default';
+    try {
+      const adrRes = await csFetch(baseUrl, authHeader, token, '/api/device-profiles/adr-algorithms');
+      if (adrRes.ok) {
+        const list = adrRes.json?.result;
+        if (Array.isArray(list) && list.length) {
+          const first = list[0] || {};
+          adrAlgorithmId = this._stringTrim(first.id || first.adrAlgorithmId || adrAlgorithmId);
+        }
+      }
+    } catch {
+      // ignore, fallback to 'default'
+    }
+
+    const createBody = {
+      deviceProfile: {
+        tenantId,
+        name: 'LoRaWAN-SIM auto',
+        description: 'Auto-created by LoRaWAN-SIM UI (ensure deviceProfileId for device provisioning).',
+        region,
+        macVersion,
+        regParamsRevision,
+        adrAlgorithmId,
+        payloadCodecRuntime: 'NONE',
+        payloadCodecScript: '',
+        flushQueueOnActivate: true,
+        uplinkInterval,
+        deviceStatusReqInterval: 1,
+        supportsOtaa: true,
+        supportsClassB: false,
+        supportsClassC: false,
+      },
+    };
+    const createRes = await csFetch(baseUrl, authHeader, token, '/api/device-profiles', 'POST', createBody);
+    if (!createRes.ok) {
+      const hint = String(createRes.text || createRes.json || '').slice(0, 800);
+      throw createError(ERROR_CODES.CHIRPSTACK_FAILED, `Auto-create deviceProfile failed (${createRes.status}): ${hint}`);
+    }
+    const createdId = this._stringTrim(createRes.json?.id);
+    if (!createdId) throw createError(ERROR_CODES.CHIRPSTACK_FAILED, 'Auto-create deviceProfile returned empty id');
+    return createdId;
+  }
+
   async _chirpstackUpsertNode(node, isUpdate) {
     const { baseUrl, token, authHeader } = this._ensureChirpstackEnv();
     const config = this.getConfig() || {};
     const cs = config.chirpstack && typeof config.chirpstack === 'object' ? config.chirpstack : {};
-    const appId = node.chirpstack.applicationId || cs.applicationId || process.env.CHIRPSTACK_APPLICATION_ID || '';
-    const profileId = node.chirpstack.deviceProfileId || cs.deviceProfileId || process.env.CHIRPSTACK_DEVICE_PROFILE_ID || '';
-    if (!appId || !profileId) {
-      throw createError(ERROR_CODES.CHIRPSTACK_FAILED, 'Missing applicationId/deviceProfileId for node sync');
-    }
+
+    const tenantId = this._stringTrim(cs.tenantId || process.env.CHIRPSTACK_TENANT_ID || node.chirpstack.tenantId || '');
+    let appId = this._stringTrim(
+      node.chirpstack.applicationId || cs.applicationId || process.env.CHIRPSTACK_APPLICATION_ID || ''
+    );
+    let profileId = this._stringTrim(
+      node.chirpstack.deviceProfileId || cs.deviceProfileId || process.env.CHIRPSTACK_DEVICE_PROFILE_ID || ''
+    );
+
+    let autoCreated = false;
+    const ensureIds = async (force = false) => {
+      if (!force && appId && profileId) return;
+      const nextAppId = await this._chirpstackEnsureApplicationId(baseUrl, authHeader, token, tenantId, appId);
+      const nextProfileId = await this._chirpstackEnsureDeviceProfileId(baseUrl, authHeader, token, tenantId, profileId, node);
+      // Persist to simulator config so subsequent UI operations can reuse them as defaults.
+      appId = nextAppId;
+      profileId = nextProfileId;
+      autoCreated = true;
+      config.chirpstack = { ...(config.chirpstack || {}), tenantId, applicationId: appId, deviceProfileId: profileId };
+      node.chirpstack = { ...(node.chirpstack || {}), applicationId: appId, deviceProfileId: profileId };
+    };
+
+    await ensureIds(false);
+
     if (!isUpdate) {
-      const createBody = {
-        device: {
-          dev_eui: node.devEui,
-          name: node.name,
-          application_id: appId,
-          device_profile_id: profileId,
-        },
+      const createDevice = async () => {
+        const createBody = {
+          device: {
+            dev_eui: node.devEui,
+            name: node.name,
+            application_id: appId,
+            device_profile_id: profileId,
+          },
+        };
+        return csFetch(baseUrl, authHeader, token, '/api/devices', 'POST', createBody);
       };
-      const createRes = await csFetch(baseUrl, authHeader, token, '/api/devices', 'POST', createBody);
+
+      let createRes = await createDevice();
       if (!createRes.ok && createRes.status !== 409) {
-        throw createError(ERROR_CODES.CHIRPSTACK_FAILED, `Create device failed (${createRes.status})`);
+        // If application/device-profile were wrong or missing, try auto-creating defaults and retry once.
+        if (!autoCreated && (createRes.status === 400 || createRes.status === 404)) {
+          await ensureIds(true);
+          if (appId && profileId && appId !== '' && profileId !== '') createRes = await createDevice();
+        }
       }
+
+      if (!createRes.ok && createRes.status !== 409) {
+        const hint = String(createRes.text || createRes.json || '').slice(0, 800);
+        throw createError(ERROR_CODES.CHIRPSTACK_FAILED, `Create device failed (${createRes.status}): ${hint}`);
+      }
+
+      // Verify by reading it back from ChirpStack (helps users confirm correct tenant/app/profile).
+      const getRes = await csFetch(baseUrl, authHeader, token, `/api/devices/${node.devEui}`);
+      return {
+        action: 'create',
+        applicationId: appId,
+        deviceProfileId: profileId,
+        create: { status: createRes.status, ok: createRes.ok },
+        device: getRes.ok ? (getRes.json?.device || getRes.json || null) : { status: getRes.status },
+      };
       const appKey = String(node.chirpstack.appKey || '').replace(/[^a-fA-F0-9]/g, '');
       if (appKey.length === 32) {
         const keyBody = { device_keys: { dev_eui: node.devEui, nwk_key: appKey, app_key: appKey } };
@@ -320,8 +514,29 @@ class OrchestratorService {
         device_profile_id: profileId,
       },
     };
-    const updateRes = await csFetch(baseUrl, authHeader, token, `/api/devices/${node.devEui}`, 'PUT', updateBody);
-    if (!updateRes.ok) throw createError(ERROR_CODES.CHIRPSTACK_FAILED, `Update device failed (${updateRes.status})`);
+    let updateRes = await csFetch(baseUrl, authHeader, token, `/api/devices/${node.devEui}`, 'PUT', updateBody);
+    if (!updateRes.ok && (updateRes.status === 400 || updateRes.status === 404)) {
+      // Retry once with auto-created defaults if the relation IDs were invalid.
+      if (!autoCreated) {
+        await ensureIds(true);
+        if (appId && profileId && appId !== '' && profileId !== '') {
+          updateRes = await csFetch(baseUrl, authHeader, token, `/api/devices/${node.devEui}`, 'PUT', updateBody);
+        }
+      }
+    }
+    if (!updateRes.ok) {
+      const hint = String(updateRes.text || updateRes.json || '').slice(0, 800);
+      throw createError(ERROR_CODES.CHIRPSTACK_FAILED, `Update device failed (${updateRes.status}): ${hint}`);
+    }
+
+    const getRes = await csFetch(baseUrl, authHeader, token, `/api/devices/${node.devEui}`);
+    return {
+      action: 'update',
+      applicationId: appId,
+      deviceProfileId: profileId,
+      update: { status: updateRes.status, ok: updateRes.ok },
+      device: getRes.ok ? (getRes.json?.device || getRes.json || null) : { status: getRes.status },
+    };
   }
 
   async _chirpstackUpsertGateway(gateway, isUpdate) {
@@ -363,7 +578,7 @@ class OrchestratorService {
     }
   }
 
-  _upsertSimulatorNode(node) {
+  _upsertSimulatorNode(node, { chirpstackSynced = true } = {}) {
     const config = this._ensureConfigStructures();
     const devEuiUp = node.devEui.toUpperCase();
     const idx = config.devices.findIndex((d) => this._deviceDevEui(d) === node.devEui);
@@ -458,7 +673,7 @@ class OrchestratorService {
       snr: old.snr ?? 5,
       uplinks: old.uplinks || 0,
       position: { x: Number(node.position.x), y: Number(node.position.y), z: Number(node.position.z || 2) },
-      syncStatus: this._syncOk(),
+      syncStatus: this._syncOk({ chirpstackSynced }),
       simulator: {
         intervalMs: intervalMsOut,
         sf: devicePayload.dataRate,
@@ -579,14 +794,28 @@ class OrchestratorService {
     try {
       const req = validateNodeCreate(body);
       const needSync = req.mode !== 'simulator_only' && this._isChirpstackSyncEnabled();
-      if (needSync) await this._chirpstackUpsertNode(req.node, false);
-      this._upsertSimulatorNode(req.node);
+      const chirpstackResult = needSync ? await this._chirpstackUpsertNode(req.node, false) : null;
+      this._upsertSimulatorNode(req.node, { chirpstackSynced: Boolean(chirpstackResult) });
       this._persistConfigIfNeeded();
       this.writeSimState();
-      return { ok: true, data: { node: req.node, syncStatus: this._syncOk() }, correlationId };
+      return {
+        ok: true,
+        data: { node: req.node, syncStatus: this._syncOk({ chirpstackSynced: Boolean(chirpstackResult) }), chirpstack: chirpstackResult },
+        correlationId,
+      };
     } catch (e) {
       if (e.code === ERROR_CODES.CHIRPSTACK_FAILED) {
-        return { ok: false, error: { code: e.code, message: e.message, retryable: true }, correlationId };
+        const req = validateNodeCreate(body);
+        const job = this._enqueuePartial(req.node.devEui, 'create_node', e.message, req);
+        const syncStatus = this._syncError(ERROR_CODES.PARTIAL_SUCCESS, e.message);
+        // Ensure the node exists locally even if ChirpStack provisioning fails.
+        this._upsertSimulatorNode({ ...req.node, syncStatus });
+        this.writeSimState();
+        return {
+          ok: false,
+          error: { code: ERROR_CODES.PARTIAL_SUCCESS, message: e.message, retryable: true, jobId: job.jobId },
+          correlationId,
+        };
       }
       if (e.code === ERROR_CODES.VALIDATION) {
         return { ok: false, error: { code: e.code, message: e.message, retryable: false }, correlationId };
@@ -609,14 +838,27 @@ class OrchestratorService {
     try {
       const req = validateNodeCreate({ ...body, node: { ...(body?.node || {}), devEui } });
       const needSync = req.mode !== 'simulator_only' && this._isChirpstackSyncEnabled();
-      if (needSync) await this._chirpstackUpsertNode(req.node, true);
-      this._upsertSimulatorNode(req.node);
+      const chirpstackResult = needSync ? await this._chirpstackUpsertNode(req.node, true) : null;
+      this._upsertSimulatorNode(req.node, { chirpstackSynced: Boolean(chirpstackResult) });
       this._persistConfigIfNeeded();
       this.writeSimState();
-      return { ok: true, data: { node: req.node, syncStatus: this._syncOk() }, correlationId };
+      return {
+        ok: true,
+        data: { node: req.node, syncStatus: this._syncOk({ chirpstackSynced: Boolean(chirpstackResult) }), chirpstack: chirpstackResult },
+        correlationId,
+      };
     } catch (e) {
       if (e.code === ERROR_CODES.CHIRPSTACK_FAILED) {
-        return { ok: false, error: { code: e.code, message: e.message, retryable: true }, correlationId };
+        const req = validateNodeCreate({ ...body, node: { ...(body?.node || {}), devEui } });
+        const job = this._enqueuePartial(req.node.devEui, 'update_node', e.message, req);
+        const syncStatus = this._syncError(ERROR_CODES.PARTIAL_SUCCESS, e.message);
+        this._upsertSimulatorNode({ ...req.node, syncStatus });
+        this.writeSimState();
+        return {
+          ok: false,
+          error: { code: ERROR_CODES.PARTIAL_SUCCESS, message: e.message, retryable: true, jobId: job.jobId },
+          correlationId,
+        };
       }
       if (e.code === ERROR_CODES.VALIDATION) {
         return { ok: false, error: { code: e.code, message: e.message, retryable: false }, correlationId };
@@ -643,7 +885,16 @@ class OrchestratorService {
       return { ok: true, data: { gateway: req.gateway, syncStatus: this._syncOk() }, correlationId };
     } catch (e) {
       if (e.code === ERROR_CODES.CHIRPSTACK_FAILED) {
-        return { ok: false, error: { code: e.code, message: e.message, retryable: true }, correlationId };
+        const req = validateGatewayCreate(body);
+        const job = this._enqueuePartial(req.gateway.gatewayId, 'create_gateway', e.message, req);
+        const syncStatus = this._syncError(ERROR_CODES.PARTIAL_SUCCESS, e.message);
+        this._upsertSimulatorGateway({ ...req.gateway, syncStatus });
+        this.writeSimState();
+        return {
+          ok: false,
+          error: { code: ERROR_CODES.PARTIAL_SUCCESS, message: e.message, retryable: true, jobId: job.jobId },
+          correlationId,
+        };
       }
       if (e.code === ERROR_CODES.VALIDATION) {
         return { ok: false, error: { code: e.code, message: e.message, retryable: false }, correlationId };
@@ -670,7 +921,16 @@ class OrchestratorService {
       return { ok: true, data: { gateway: req.gateway, syncStatus: this._syncOk() }, correlationId };
     } catch (e) {
       if (e.code === ERROR_CODES.CHIRPSTACK_FAILED) {
-        return { ok: false, error: { code: e.code, message: e.message, retryable: true }, correlationId };
+        const req = validateGatewayCreate({ ...body, gateway: { ...(body?.gateway || {}), gatewayId } });
+        const job = this._enqueuePartial(req.gateway.gatewayId, 'update_gateway', e.message, req);
+        const syncStatus = this._syncError(ERROR_CODES.PARTIAL_SUCCESS, e.message);
+        this._upsertSimulatorGateway({ ...req.gateway, syncStatus });
+        this.writeSimState();
+        return {
+          ok: false,
+          error: { code: ERROR_CODES.PARTIAL_SUCCESS, message: e.message, retryable: true, jobId: job.jobId },
+          correlationId,
+        };
       }
       if (e.code === ERROR_CODES.VALIDATION) {
         return { ok: false, error: { code: e.code, message: e.message, retryable: false }, correlationId };

@@ -207,6 +207,9 @@ export default function App() {
 
   const createNodeMu = useMutation({
     mutationFn: async (payload: NodeResourcePayload & { mode: string; devEui: string; batchCount?: number }) => {
+      pushLog(
+        `POST /resources/nodes -> devEui=${payload.devEui.replace(/\s/g, '')} mode=${payload.mode} appId=${payload.csApplicationId} profileId=${payload.csDeviceProfileId}`,
+      )
       const body = {
         mode: payload.mode,
         node: {
@@ -215,7 +218,7 @@ export default function App() {
         },
       }
       return postJson<unknown>('/resources/nodes', body, {
-        idempotencyKey: `create-node-${payload.devEui}`,
+        idempotencyKey: `create-node-${payload.devEui}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
       })
     },
     onSuccess: (res) => {
@@ -223,11 +226,22 @@ export default function App() {
       setRightMode('auto')
       void invalidate()
     },
-    onError: (e: Error) => pushLog(`create node error: ${e.message}`),
+    onError: (e: unknown) => {
+      const err: any = e
+      const msg = err?.message || String(e)
+      pushLog(`create node error: ${msg}`)
+      // Also print rich error details for debugging.
+      console.error('create node error:', err)
+      if (err?.body) pushLog(`create node error body: ${JSON.stringify(err.body).slice(0, 1500)}`)
+      else if (err?.status) pushLog(`create node error status: ${String(err.status)}`)
+    },
   })
 
   const createGwMu = useMutation({
     mutationFn: async (payload: GatewayResourcePayload & { mode: string; gatewayId: string }) => {
+      pushLog(
+        `POST /resources/gateways -> gatewayId=${payload.gatewayId.replace(/\s/g, '')} mode=${payload.mode} tenantId=${payload.csTenantId}`,
+      )
       const body = {
         mode: payload.mode,
         gateway: {
@@ -239,7 +253,7 @@ export default function App() {
         },
       }
       return postJson<unknown>('/resources/gateways', body, {
-        idempotencyKey: `create-gw-${payload.gatewayId}`,
+        idempotencyKey: `create-gw-${payload.gatewayId}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
       })
     },
     onSuccess: (res) => {
@@ -247,7 +261,13 @@ export default function App() {
       setRightMode('auto')
       void invalidate()
     },
-    onError: (e: Error) => pushLog(`create gateway error: ${e.message}`),
+    onError: (e: unknown) => {
+      const err: any = e
+      const msg = err?.message || String(e)
+      pushLog(`create gateway error: ${msg}`)
+      console.error('create gateway error:', err)
+      if (err?.body) pushLog(`create gateway error body: ${JSON.stringify(err.body).slice(0, 1500)}`)
+    },
   })
 
   const patchNodeMu = useMutation({
@@ -265,7 +285,13 @@ export default function App() {
       pushLog(`patch node: ${JSON.stringify(res)}`)
       void invalidate()
     },
-    onError: (e: Error) => pushLog(`patch node error: ${e.message}`),
+    onError: (e: unknown) => {
+      const err: any = e
+      const msg = err?.message || String(e)
+      pushLog(`patch node error: ${msg}`)
+      console.error('patch node error:', err)
+      if (err?.body) pushLog(`patch node error body: ${JSON.stringify(err.body).slice(0, 1500)}`)
+    },
   })
 
   const patchGwMu = useMutation({
@@ -288,7 +314,13 @@ export default function App() {
       pushLog(`patch gateway: ${JSON.stringify(res)}`)
       void invalidate()
     },
-    onError: (e: Error) => pushLog(`patch gateway error: ${e.message}`),
+    onError: (e: unknown) => {
+      const err: any = e
+      const msg = err?.message || String(e)
+      pushLog(`patch gateway error: ${msg}`)
+      console.error('patch gateway error:', err)
+      if (err?.body) pushLog(`patch gateway error body: ${JSON.stringify(err.body).slice(0, 1500)}`)
+    },
   })
 
   const patchScenarioMu = useMutation({
@@ -740,9 +772,15 @@ export default function App() {
             chirpstackBaseUrl: String((data as { config?: { chirpstack?: { baseUrl?: string } } } | undefined)?.config?.chirpstack?.baseUrl || 'http://127.0.0.1:8090'),
             chirpstackApiToken: '',
             chirpstackAuthHeader: String((data as { config?: { chirpstack?: { authHeader?: string } } } | undefined)?.config?.chirpstack?.authHeader || 'Grpc-Metadata-Authorization'),
-            chirpstackApplicationId: String((data as { config?: { chirpstack?: { applicationId?: string } } } | undefined)?.config?.chirpstack?.applicationId || '540a999c-9eeb-4c5c-bed1-778dacddaf46'),
-            chirpstackDeviceProfileId: String((data as { config?: { chirpstack?: { deviceProfileId?: string } } } | undefined)?.config?.chirpstack?.deviceProfileId || 'a1b2c3d4-1111-2222-3333-444444444444'),
-            chirpstackTenantId: String((data as { config?: { chirpstack?: { tenantId?: string } } } | undefined)?.config?.chirpstack?.tenantId || '81d48efb-6216-4c7f-8c21-46a5eac9d737'),
+            chirpstackApplicationId: String(
+              (data as { config?: { chirpstack?: { applicationId?: string } } } | undefined)?.config?.chirpstack?.applicationId ?? '540a999c-9eeb-4c5c-bed1-778dacddaf46',
+            ),
+            chirpstackDeviceProfileId: String(
+              (data as { config?: { chirpstack?: { deviceProfileId?: string } } } | undefined)?.config?.chirpstack?.deviceProfileId ?? 'a1b2c3d4-1111-2222-3333-444444444444',
+            ),
+            chirpstackTenantId: String(
+              (data as { config?: { chirpstack?: { tenantId?: string } } } | undefined)?.config?.chirpstack?.tenantId ?? '81d48efb-6216-4c7f-8c21-46a5eac9d737',
+            ),
             chirpstackTopologyEnabled: Boolean(chirpCfg.topologyEnabled),
             chirpstackInventoryPollSec:
               chirpCfg.inventoryPollSec != null ? Number(chirpCfg.inventoryPollSec) || 60 : 60,
