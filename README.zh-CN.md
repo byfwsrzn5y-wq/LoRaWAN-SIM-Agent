@@ -157,6 +157,8 @@ Vite 将 API 代理到 `VITE_CONTROL_PROXY_TARGET`（默认 `http://127.0.0.1:99
 
 **ChirpStack 真实拓扑（可选）**：在配置 `chirpstack.topologyEnabled: true`（或环境变量 `ENABLE_CHIRPSTACK_TOPOLOGY=true`）且具备 REST API Token 时，控制面会把 ChirpStack 中的设备/网关与模拟器资源合并进 `GET /sim-state`，并用应用集成 MQTT 的 `rxInfo` 在画布上画节点—网关边。可在 Web UI 的 **Scenario** 面板勾选拓扑相关项并保存（`PATCH /resources/simulation`），左侧栏 **刷新** 可立即拉取清单；详见 [`simulator/docs/使用指南.md`](simulator/docs/使用指南.md) §5.1 与 [`docs/LORAWAN_SIM_CHIRPSTACK_UI_STATE_MACHINE.md`](docs/LORAWAN_SIM_CHIRPSTACK_UI_STATE_MACHINE.md)。
 
+**UDP 对齐提示（UI）**：在 **Scenario** 中，你可以选择 UDP 协议（`udp4/udp6`）以及 UDP 目标端口（会存为 `lnsPort` / `simulation.gateway.port`）。当你修改 `chirpstack.baseUrl` 时，UI 会自动从 baseUrl 里推导主机并对齐到 UDP 转发目标（`lnsHost` / `simulation.gateway.address`）。注意：修改 `udp.protocol` 需要重启模拟器；端口/主机通常可热更新。
+
 ### D. OpenClaw Agent / Discord（可选）
 
 - **OpenClaw 插件（推荐）**：[`simulator/openclaw-lorawan-sim/`](simulator/openclaw-lorawan-sim/) · 最短对接 [`docs/OPENCLAW_QUICKSTART.md`](docs/OPENCLAW_QUICKSTART.md)

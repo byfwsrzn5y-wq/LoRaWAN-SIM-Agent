@@ -7,6 +7,8 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - **UI**: Top bar shows resolved profile save directory (`profilesDirResolved` + tooltip with `profileConfig.profilesDir`) from `/sim-state` `config.profileConfig`.
+- **UI**: Scenario adds UDP protocol/port selection and auto-aligns UDP forwarding host from `chirpstack.baseUrl`; Node/Gateway/Inspector forms default to `sync_both`.
+- **Runtime/UDP**: UDP target host/port can be updated via scenario; changing `udp.protocol` may require simulator restart due to socket family.
 - **Profile directory cleanup**: UI snapshots live under `simulator/configs/profiles/` only; moved `default.json` out of removed `simulator/configs/configs/profiles/`. `index.js` default profile path now uses sibling `profiles/` when the main config file sits in `simulator/configs/`. `example-extends-chirpstack.json` uses `"profileConfig.profilesDir": "profiles"`.
 - **Merge v2 motion/environment/derived anomalies into `index.js`**: new [`simulator/src/runtime/motion-environment.js`](simulator/src/runtime/motion-environment.js) wires `MovementEngine`, `EnvironmentManager`, and `DerivedAnomalyEngine` on the uplink path when config opts in (`environment` zones/events, `devices[].movement`, `derivedAnomalies`, or `v2DerivedAnomalies: true`). [`simulator/main.js`](simulator/main.js) is deprecated and only loads `index.js`. Hot-add can register `movement` when runtime is already active. Docs: [`docs/PROJECT_ANALYSIS.md`](docs/PROJECT_ANALYSIS.md) §7.1, [`PROJECT.md`](PROJECT.md), [`simulator/README.md`](simulator/README.md).
 

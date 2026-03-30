@@ -97,6 +97,8 @@ export interface ScenarioResourcePayload {
   environment: string
   shadowFadingStd: number
   fastFadingEnabled: boolean
+  udpSocketFamily: string
+  udpPort: number
   chirpstackBaseUrl: string
   chirpstackApiToken: string
   chirpstackAuthHeader: string
@@ -193,6 +195,8 @@ interface RightPanelProps {
     environment?: string
     shadowFadingStd?: number
     fastFadingEnabled?: boolean
+    udpSocketFamily?: string
+    udpPort?: number
     chirpstackBaseUrl?: string
     chirpstackApiToken?: string
     chirpstackAuthHeader?: string
@@ -362,7 +366,7 @@ function NodeForm({
   const b = syncStatusToBadge(node?.syncStatus)
   const p = node?.position || { x: 400, y: 300, z: 2 }
   const sim = node?.simulator
-  const [mode, setMode] = useState('simulator_only')
+  const [mode, setMode] = useState('sync_both')
   const suggestedDevEui = useMemo(() => nextNodeDevEui(nodes), [nodes])
   const [devEui, setDevEui] = useState(node?.eui || suggestedDevEui)
   const [name, setName] = useState(node?.name || `sim-node-${suggestedDevEui.slice(-4)}`)
@@ -762,6 +766,8 @@ function ScenarioForm({
   const [environment, setEnvironment] = useState(config?.environment || 'urban')
   const [shadowFadingStd, setShadowFadingStd] = useState(config?.shadowFadingStd ?? 8)
   const [fastFadingEnabled, setFastFadingEnabled] = useState(config?.fastFadingEnabled !== false)
+  const [udpSocketFamily, setUdpSocketFamily] = useState(config?.udpSocketFamily || 'udp4')
+  const [udpPort, setUdpPort] = useState(config?.udpPort ?? 1702)
   const [chirpstackBaseUrl, setChirpstackBaseUrl] = useState(config?.chirpstackBaseUrl || 'http://127.0.0.1:8090')
   const [chirpstackApiToken, setChirpstackApiToken] = useState(config?.chirpstackApiToken || '')
   const [chirpstackAuthHeader, setChirpstackAuthHeader] = useState(config?.chirpstackAuthHeader || 'Grpc-Metadata-Authorization')
@@ -802,6 +808,8 @@ function ScenarioForm({
           environment,
           shadowFadingStd,
           fastFadingEnabled,
+          udpSocketFamily: udpSocketFamily.trim() || 'udp4',
+          udpPort,
           chirpstackBaseUrl: chirpstackBaseUrl.trim(),
           chirpstackApiToken: chirpstackApiToken.trim(),
           chirpstackAuthHeader: chirpstackAuthHeader.trim(),
@@ -823,6 +831,7 @@ function ScenarioForm({
       <label className="flex flex-col gap-0.5">
         <span className="text-xs text-slate-400">mode</span>
         <select className="rounded border border-slate-600 bg-slate-800 px-2 py-1" value={mode} onChange={(e) => setMode(e.target.value)}>
+          <option value="sync_both">sync_both</option>
           <option value="simulator_only">simulator_only</option>
         </select>
       </label>
@@ -844,6 +853,18 @@ function ScenarioForm({
           ))}
         </select>
       </label>
+      <label className="flex flex-col gap-0.5">
+        <span className="text-xs text-slate-400">udp.protocol (udp4/udp6)</span>
+        <select
+          className="rounded border border-slate-600 bg-slate-800 px-2 py-1"
+          value={udpSocketFamily}
+          onChange={(e) => setUdpSocketFamily(e.target.value)}
+        >
+          <option value="udp4">udp4</option>
+          <option value="udp6">udp6</option>
+        </select>
+      </label>
+      <Num label="udp.port (lnsPort)" value={udpPort} onChange={setUdpPort} min={1} max={65535} />
       <Num label="signalModel.txPower" value={txPower} onChange={setTxPower} />
       <Num label="signalModel.txGain" value={txGain} onChange={setTxGain} step={0.1} />
       <label className="flex flex-col gap-0.5">
@@ -869,7 +890,10 @@ function ScenarioForm({
         ChirpStack 拓扑（UI 画布）
       </div>
       <Check label="chirpstack.topologyEnabled（合并 REST 清单 + MQTT rxInfo）" value={chirpstackTopologyEnabled} onChange={setChirpstackTopologyEnabled} />
-      <p className="text-[10px] text-slate-500">保存后定时拉取间隔需重启模拟器进程才会按新 inventoryPollSec 生效；可先点左侧「刷新」拉清单。</p>
+      <p className="text-[10px] text-slate-500">
+        保存后运行参数的生效范围不同：UDP 协议（udp4/udp6）需要重启；UDP 端口/主机通常可热更新；以及 inventoryPollSec 的定时拉取需要重启。
+        可先点左侧「刷新」拉清单。
+      </p>
       <Num label="chirpstack.inventoryPollSec" value={chirpstackInventoryPollSec} onChange={setChirpstackInventoryPollSec} min={5} max={3600} />
       <Num label="chirpstack.rxStalenessSec（过期不画边）" value={chirpstackRxStalenessSec} onChange={setChirpstackRxStalenessSec} min={10} max={3600} />
       <Text

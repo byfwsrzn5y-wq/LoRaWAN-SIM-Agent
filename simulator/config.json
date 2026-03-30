@@ -17,7 +17,7 @@
     "resetOtaaOnStart": true,
     "gateway": {
       "gatewayEui": "19023c6b00000000",
-      "address": "127.0.0.1",
+      "address": "10.0.0.3",
       "port": 1702
     },
     "region": "AS923",
@@ -398,7 +398,7 @@
     }
   ],
   "gatewayEui": "19023c6b00000000",
-  "lnsHost": "127.0.0.1",
+  "lnsHost": "10.0.0.3",
   "lnsPort": 1702,
   "udpBindPort": 0,
   "mqtt": {

@@ -10,9 +10,9 @@ React + TypeScript + Vite + Tailwind. Talks to the **simulator control HTTP serv
 
 ### ChirpStack sync vs local-only
 
-Inspector forms default to **`simulator_only`** so PATCH/POST work without ChirpStack credentials. Switch to **`sync_both`** only when the simulator process has `CHIRPSTACK_API_URL` and `CHIRPSTACK_API_TOKEN` set (see repository [`.env.example`](../.env.example)).
+Inspector forms default to **`sync_both`** so PATCH/POST can sync into ChirpStack. If you don't have `CHIRPSTACK_API_URL` / `CHIRPSTACK_API_TOKEN` configured on the simulator process, you should switch to **`simulator_only`** to avoid sync errors (see repository [`.env.example`](../.env.example)).
 
-If **Save** still returns `500 Missing CHIRPSTACK_API_URL or CHIRPSTACK_API_TOKEN`, you selected **`sync_both`** without those variables. Either configure ChirpStack env vars, use **`simulator_only`**, or set `ENABLE_CHIRPSTACK_SYNC=false` on the simulator process.
+If **Save** still returns `500 Missing CHIRPSTACK_API_URL or CHIRPSTACK_API_TOKEN`, either configure ChirpStack env vars, switch the UI to **`simulator_only`**, or set `ENABLE_CHIRPSTACK_SYNC=false` on the simulator process.
 
 ## Dev
 

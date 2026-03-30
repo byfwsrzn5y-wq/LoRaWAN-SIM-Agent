@@ -765,8 +765,10 @@ function pickWeighted(weights) {
   return ids[ids.length - 1];
 }
 
-function createSocket(bindPort) {
-  const socket = dgram.createSocket('udp4');
+function createSocket(bindPort, udpSocketFamily) {
+  const family = String(udpSocketFamily || 'udp4').toLowerCase();
+  const socketFamily = family === 'udp6' ? 'udp6' : 'udp4';
+  const socket = dgram.createSocket(socketFamily);
   return new Promise((resolve, reject) => {
     socket.once('error', reject);
     socket.bind(bindPort || 0, () => {
@@ -1357,6 +1359,7 @@ async function main() {
       'lnsHost',
       'lnsPort',
       'udpBindPort',
+      'udpSocketFamily',
       'mqtt',
       'controlServer',
       'control',
@@ -1450,9 +1453,14 @@ async function main() {
   }
 
   const gatewayEuiBuf = euiStringToBuffer(config.gatewayEui || '0102030405060708');
-  const lnsHost = config.lnsHost || '127.0.0.1';
-  const lnsPort = Number(config.lnsPort || 1700);
+  function getLnsHost() {
+    return config.lnsHost || '127.0.0.1';
+  }
+  function getLnsPort() {
+    return Number(config.lnsPort || 1700);
+  }
   const bindPort = Number(config.udpBindPort || 0);
+  const udpSocketFamily = String(config.udpSocketFamily || config.udpFamily || 'udp4').toLowerCase();
 
   const mqttCfg = config.mqtt || {};
   const mqttEnabled = Boolean(mqttCfg.enabled);
@@ -1727,7 +1735,7 @@ async function main() {
   const macDl = createMacDownlinkHandlers();
 
   if (!mqttEnabled) {
-    socket = await createSocket(bindPort);
+    socket = await createSocket(bindPort, udpSocketFamily);
     const localAddress = socket.address();
     console.log(`Gateway simulator bound on ${localAddress.address}:${localAddress.port}`);
   } else {
@@ -1796,7 +1804,7 @@ async function main() {
 
   if (!mqttEnabled) {
     socket.on('message', (msg, rinfo) => {
-      if (!sameUdpPeerAddress(lnsHost, rinfo.address) || rinfo.port !== lnsPort) return;
+      if (!sameUdpPeerAddress(getLnsHost(), rinfo.address) || rinfo.port !== getLnsPort()) return;
       if (msg.length < 4) return;
       const version = msg[0], tokenHi = msg[1], tokenLo = msg[2], identifier = msg[3];
       if (version !== PROTOCOL_VERSION) return;
@@ -1914,7 +1922,7 @@ console.log('[DEBUG] Using appKeyBuf:', pending.appKeyBuf.toString('hex'));
           }
           
           const txAck = createTxAckPacket(gatewayEuiBuf, [tokenHi, tokenLo], 'NONE');
-          socket.send(txAck, 0, txAck.length, lnsPort, lnsHost, (err) => {
+          socket.send(txAck, 0, txAck.length, getLnsPort(), getLnsHost(), (err) => {
             if (err) console.error('TX_ACK send failed:', err.message);
             else console.log('=> TX_ACK (NONE)');
           });
@@ -1935,7 +1943,7 @@ console.log('[DEBUG] Using appKeyBuf:', pending.appKeyBuf.toString('hex'));
         multiGw.gateways.forEach((gw, idx) => {
           const gwEuiBuf = euiStringToBuffer(gw.eui);
           const pull = createPullDataPacket(gwEuiBuf);
-          socket.send(pull, 0, pull.length, lnsPort, lnsHost, (err) => {
+          socket.send(pull, 0, pull.length, getLnsPort(), getLnsHost(), (err) => {
             if (err) console.error(`[✗] PULL_DATA GW${idx} failed:`, err.message);
             else console.log(`[📡] PULL GW${idx}: ${gw.eui.slice(0,8)}...`);
           });
@@ -1943,7 +1951,7 @@ console.log('[DEBUG] Using appKeyBuf:', pending.appKeyBuf.toString('hex'));
       } else {
         // Original single gateway
         const pull = createPullDataPacket(gatewayEuiBuf);
-        socket.send(pull, 0, pull.length, lnsPort, lnsHost, (err) => {
+        socket.send(pull, 0, pull.length, getLnsPort(), getLnsHost(), (err) => {
           if (err) console.error('PULL_DATA send failed:', err.message);
           else console.log('=> PULL_DATA');
         });
@@ -1968,7 +1976,7 @@ console.log('[DEBUG] Using appKeyBuf:', pending.appKeyBuf.toString('hex'));
           const gwEuiBuf = euiStringToBuffer(gw.eui);
           if (!mqttEnabled) {
             const pkt = createPushStatPacket(gwEuiBuf, stat);
-            socket.send(pkt, 0, pkt.length, lnsPort, lnsHost, (err) => {
+            socket.send(pkt, 0, pkt.length, getLnsPort(), getLnsHost(), (err) => {
               if (err) console.error(`[✗] PUSH_DATA (stat) GW${idx} failed:`, err.message);
               else console.log(`[📊] Stats GW${idx}: ${gw.eui.slice(0,8)}...`);
             });
@@ -2006,7 +2014,7 @@ console.log('[DEBUG] Using appKeyBuf:', pending.appKeyBuf.toString('hex'));
       } else if (!mqttEnabled) {
         // Original single gateway stats
         const pkt = createPushStatPacket(gatewayEuiBuf, stat);
-        socket.send(pkt, 0, pkt.length, lnsPort, lnsHost, (err) => {
+        socket.send(pkt, 0, pkt.length, getLnsPort(), getLnsHost(), (err) => {
           if (err) console.error('PUSH_DATA (stat) send failed:', err.message);
           else console.log('=> PUSH_DATA stat');
         });
@@ -2418,7 +2426,7 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
               const effSnr = anomalyRfOverrideActive ? lsnr : gw.snr;
               const rxpkWithSignal = { ...rxpk, rssi: effRssi, lsnr: effSnr };
               const pkt = createPushDataPacket(gwEuiBuf, [rxpkWithSignal]);
-              socket.send(pkt, 0, pkt.length, lnsPort, lnsHost, (err) => {
+              socket.send(pkt, 0, pkt.length, getLnsPort(), getLnsHost(), (err) => {
                 if (err) console.error(`[✗] UDP MGW ${gw.eui} failed:`, err.message);
                 else {
                   console.log(`[Multi-GW UDP] Sent to ${gw.eui}: RSSI=${effRssi}`);
@@ -2451,7 +2459,7 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
           // 原有单网关发送
           const pkt = createPushDataPacket(gatewayEuiBuf, [rxpk]);
           const isJoinPending = lorawanDevice && lorawanDevice.isOtaa && !lorawanDevice.joined;
-          socket.send(pkt, 0, pkt.length, lnsPort, lnsHost, (err) => {
+          socket.send(pkt, 0, pkt.length, getLnsPort(), getLnsHost(), (err) => {
             if (err) console.error('PUSH_DATA send failed:', err.message);
             else {
               console.log('=> PUSH_DATA', label ? `[${label}]` : '', 'size', rxpk.size);
@@ -3485,6 +3493,7 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
     const unsafeReasons = [];
     if (before && before.lnsHost !== config.lnsHost) unsafeReasons.push('lnsHost_changed');
     if (before && Number(before.lnsPort || 0) !== Number(config.lnsPort || 0)) unsafeReasons.push('lnsPort_changed');
+    if (before && String(before.udpSocketFamily || '') !== String(config.udpSocketFamily || '')) unsafeReasons.push('udpSocketFamily_changed');
     if (before && before.gatewayEui !== config.gatewayEui) unsafeReasons.push('gatewayEui_changed');
     if (before && String(before?.lorawan?.region || '') !== String(config?.lorawan?.region || '')) unsafeReasons.push('lorawan_region_changed');
     if (before && String(before?.lorawan?.csvImportPath || '') !== String(config?.lorawan?.csvImportPath || '')) unsafeReasons.push('csvImportPath_changed');
@@ -3505,6 +3514,7 @@ console.log('[DEBUG] nwkKeyBuf:', lorawanDevice.nwkKeyBuf ? lorawanDevice.nwkKey
         lnsHost: config.lnsHost,
         lnsPort: config.lnsPort,
         udpBindPort: config.udpBindPort,
+        udpSocketFamily: config.udpSocketFamily,
         mqtt: safeJsonClone(config.mqtt || {}),
         controlServer: safeJsonClone(config.controlServer || {}),
         control: safeJsonClone(config.control || {}),

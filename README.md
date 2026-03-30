@@ -157,6 +157,8 @@ Vite proxies API calls to `VITE_CONTROL_PROXY_TARGET` (default `http://127.0.0.1
 
 **ChirpStack live topology (optional)**: with `chirpstack.topologyEnabled: true` (or `ENABLE_CHIRPSTACK_TOPOLOGY=true`) and a REST API token, the control plane merges ChirpStack devices/gateways into `GET /sim-state` and draws node–gateway edges using MQTT integration `rxInfo`. Use the **Scenario** panel and **Refresh** in the UI; see [`simulator/docs/使用指南.md`](simulator/docs/使用指南.md) §5.1 and [`docs/LORAWAN_SIM_CHIRPSTACK_UI_STATE_MACHINE.md`](docs/LORAWAN_SIM_CHIRPSTACK_UI_STATE_MACHINE.md).
 
+**UDP alignment tips (UI)**: in **Scenario**, you can select UDP protocol (`udp4/udp6`) and UDP target port (stored as `lnsPort` / `simulation.gateway.port`). When you change `chirpstack.baseUrl`, the UI auto-derives its host and aligns it to UDP forwarding target (`lnsHost` / `simulation.gateway.address`). Note: changing `udp.protocol` requires restarting the simulator; changing port/host is usually hot-updatable.
+
 ### D. OpenClaw Agent / Discord (optional)
 
 - **OpenClaw plugin (recommended)**: [`simulator/openclaw-lorawan-sim/`](simulator/openclaw-lorawan-sim/) · quick start [`docs/OPENCLAW_QUICKSTART.md`](docs/OPENCLAW_QUICKSTART.md)

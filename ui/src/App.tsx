@@ -332,6 +332,10 @@ export default function App() {
             mode: payload.multiGatewayMode,
             primaryGateway: payload.primaryGateway,
           },
+          udp: {
+            protocol: payload.udpSocketFamily,
+            port: payload.udpPort,
+          },
           signalModel: {
             txPower: payload.txPower,
             txGain: payload.txGain,
@@ -769,6 +773,16 @@ export default function App() {
             environment: signalModel?.environment,
             shadowFadingStd: Number(signalModel?.shadowFadingStd ?? 8),
             fastFadingEnabled: Boolean(signalModel?.fastFadingEnabled ?? true),
+            udpSocketFamily: String(
+              (data as { config?: { udpSocketFamily?: string; udpFamily?: string } } | undefined)?.config
+                ?.udpSocketFamily || (data as { config?: { udpFamily?: string } } | undefined)?.config?.udpFamily || 'udp4',
+            ),
+            udpPort: Number(
+              (data as { config?: { lnsPort?: number } } | undefined)?.config?.lnsPort ??
+                (data as { config?: { simulation?: { gateway?: { port?: number } } } } | undefined)?.config
+                  ?.simulation?.gateway?.port ??
+                1702,
+            ),
             chirpstackBaseUrl: String((data as { config?: { chirpstack?: { baseUrl?: string } } } | undefined)?.config?.chirpstack?.baseUrl || 'http://127.0.0.1:8090'),
             chirpstackApiToken: '',
             chirpstackAuthHeader: String((data as { config?: { chirpstack?: { authHeader?: string } } } | undefined)?.config?.chirpstack?.authHeader || 'Grpc-Metadata-Authorization'),

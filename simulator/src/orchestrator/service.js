@@ -23,6 +23,20 @@ function normalizeApiBase(url) {
   return raw.endsWith('/api') ? raw.slice(0, -4) : raw;
 }
 
+function extractHostFromUrlLike(urlLike) {
+  const raw = String(urlLike || '').trim();
+  if (!raw) return '';
+  try {
+    return new URL(raw).hostname || '';
+  } catch {
+    try {
+      return new URL(`http://${raw}`).hostname || '';
+    } catch {
+      return '';
+    }
+  }
+}
+
 async function csFetch(baseUrl, authHeader, token, apiPath, method = 'GET', body = null) {
   const url = `${baseUrl}${apiPath.startsWith('/') ? '' : '/'}${apiPath}`;
   const headers = {
@@ -459,6 +473,20 @@ class OrchestratorService {
 
     await ensureIds(false);
 
+    const sanitizeAppKey = (raw) => String(raw == null ? '' : raw).replace(/[^a-fA-F0-9]/g, '');
+    const appKeyFromNode = sanitizeAppKey(node.chirpstack?.appKey);
+    const appKeyFromSim = sanitizeAppKey(config.lorawan?.appKey);
+    const appKey =
+      appKeyFromNode.length === 32 ? appKeyFromNode
+        : appKeyFromSim.length === 32 ? appKeyFromSim
+          : '';
+    const appKeySource =
+      appKeyFromNode.length === 32 ? 'node.chirpstack.appKey'
+        : appKeyFromSim.length === 32 ? 'config.lorawan.appKey'
+          : 'none';
+    const appKeyMask =
+      appKey.length === 32 ? `${appKey.slice(0, 4)}…${appKey.slice(-4)}` : '';
+
     if (!isUpdate) {
       const createDevice = async () => {
         const createBody = {
@@ -486,25 +514,33 @@ class OrchestratorService {
         throw createError(ERROR_CODES.CHIRPSTACK_FAILED, `Create device failed (${createRes.status}): ${hint}`);
       }
 
+      // Upsert device keys if we have a valid appKey.
+      let keys = { attempted: false, ok: null, status: null, hint: null, source: appKeySource, mask: appKeyMask };
+      if (appKey.length === 32) {
+        keys.attempted = true;
+        const keyBody = { device_keys: { dev_eui: node.devEui, nwk_key: appKey, app_key: appKey } };
+        let keyRes = await csFetch(baseUrl, authHeader, token, `/api/devices/${node.devEui}/keys`, 'POST', keyBody);
+        if (!keyRes.ok) {
+          keyRes = await csFetch(baseUrl, authHeader, token, `/api/devices/${node.devEui}/keys`, 'PUT', keyBody);
+        }
+        keys.ok = keyRes.ok;
+        keys.status = keyRes.status;
+        keys.hint = String(keyRes.text || keyRes.json || '').slice(0, 400) || null;
+        if (!keyRes.ok) throw createError(ERROR_CODES.CHIRPSTACK_FAILED, `Upsert keys failed (${keyRes.status}): ${keys.hint || ''}`.trim());
+      }
+
       // Verify by reading it back from ChirpStack (helps users confirm correct tenant/app/profile).
       const getRes = await csFetch(baseUrl, authHeader, token, `/api/devices/${node.devEui}`);
+      const keysGetRes = await csFetch(baseUrl, authHeader, token, `/api/devices/${node.devEui}/keys`);
       return {
         action: 'create',
         applicationId: appId,
         deviceProfileId: profileId,
         create: { status: createRes.status, ok: createRes.ok },
         device: getRes.ok ? (getRes.json?.device || getRes.json || null) : { status: getRes.status },
+        keys,
+        keysGet: keysGetRes.ok ? (keysGetRes.json?.deviceKeys || keysGetRes.json || null) : { status: keysGetRes.status, hint: String(keysGetRes.text || '').slice(0, 200) },
       };
-      const appKey = String(node.chirpstack.appKey || '').replace(/[^a-fA-F0-9]/g, '');
-      if (appKey.length === 32) {
-        const keyBody = { device_keys: { dev_eui: node.devEui, nwk_key: appKey, app_key: appKey } };
-        let keyRes = await csFetch(baseUrl, authHeader, token, `/api/devices/${node.devEui}/keys`, 'POST', keyBody);
-        if (!keyRes.ok) {
-          keyRes = await csFetch(baseUrl, authHeader, token, `/api/devices/${node.devEui}/keys`, 'PUT', keyBody);
-        }
-        if (!keyRes.ok) throw createError(ERROR_CODES.CHIRPSTACK_FAILED, `Upsert keys failed (${keyRes.status})`);
-      }
-      return;
     }
     const updateBody = {
       device: {
@@ -529,13 +565,31 @@ class OrchestratorService {
       throw createError(ERROR_CODES.CHIRPSTACK_FAILED, `Update device failed (${updateRes.status}): ${hint}`);
     }
 
+    // Even for update (device already exists), ensure device keys exist when we have a valid appKey.
+    let keys = { attempted: false, ok: null, status: null, hint: null, source: appKeySource, mask: appKeyMask };
+    if (appKey.length === 32) {
+      keys.attempted = true;
+      const keyBody = { device_keys: { dev_eui: node.devEui, nwk_key: appKey, app_key: appKey } };
+      let keyRes = await csFetch(baseUrl, authHeader, token, `/api/devices/${node.devEui}/keys`, 'POST', keyBody);
+      if (!keyRes.ok) {
+        keyRes = await csFetch(baseUrl, authHeader, token, `/api/devices/${node.devEui}/keys`, 'PUT', keyBody);
+      }
+      keys.ok = keyRes.ok;
+      keys.status = keyRes.status;
+      keys.hint = String(keyRes.text || keyRes.json || '').slice(0, 400) || null;
+      if (!keyRes.ok) throw createError(ERROR_CODES.CHIRPSTACK_FAILED, `Upsert keys failed (${keyRes.status}): ${keys.hint || ''}`.trim());
+    }
+
     const getRes = await csFetch(baseUrl, authHeader, token, `/api/devices/${node.devEui}`);
+    const keysGetRes = await csFetch(baseUrl, authHeader, token, `/api/devices/${node.devEui}/keys`);
     return {
       action: 'update',
       applicationId: appId,
       deviceProfileId: profileId,
       update: { status: updateRes.status, ok: updateRes.ok },
       device: getRes.ok ? (getRes.json?.device || getRes.json || null) : { status: getRes.status },
+      keys,
+      keysGet: keysGetRes.ok ? (keysGetRes.json?.deviceKeys || keysGetRes.json || null) : { status: keysGetRes.status, hint: String(keysGetRes.text || '').slice(0, 200) },
     };
   }
 
@@ -740,6 +794,10 @@ class OrchestratorService {
     const config = this._ensureConfigStructures();
     if (!config.signalModel) config.signalModel = {};
     if (!config.multiGateway) config.multiGateway = { enabled: true, mode: 'overlapping', gateways: [] };
+    if (!config.simulation) config.simulation = {};
+    if (!config.simulation.gateway || typeof config.simulation.gateway !== 'object') config.simulation.gateway = {};
+
+    const udpCfg = simulation.udp && typeof simulation.udp === 'object' ? simulation.udp : {};
     const signalModel = simulation.signalModel && typeof simulation.signalModel === 'object' ? simulation.signalModel : {};
     const multiGateway = simulation.multiGateway && typeof simulation.multiGateway === 'object' ? simulation.multiGateway : {};
     const chirpstack = simulation.chirpstack && typeof simulation.chirpstack === 'object' ? simulation.chirpstack : {};
@@ -757,12 +815,45 @@ class OrchestratorService {
       }
     }
     config.chirpstack = { ...prevCs, ...incCs };
+
+    // Keep UDP target host aligned with ChirpStack base URL host
+    // (REST baseUrl controls API, while UDP forwarding uses lnsHost / simulation.gateway.address).
+    const derivedHost = extractHostFromUrlLike(config.chirpstack.baseUrl);
+    if (derivedHost) {
+      config.lnsHost = derivedHost;
+      config.simulation.gateway.address = derivedHost;
+    }
+
+    // Apply UDP family + port from UI
+    // (UDP target uses lnsHost/lnsPort and simulation.gateway.address/port).
+    const udpProtocolRaw = this._stringTrim(udpCfg.protocol || udpCfg.family || udpCfg.socketFamily || udpCfg.udpSocketFamily);
+    const udpProtocol = udpProtocolRaw.toLowerCase();
+    if (udpProtocol === 'udp' || udpProtocol === 'udp4' || udpProtocol === 'udp6') {
+      config.udpSocketFamily = udpProtocol === 'udp' ? 'udp4' : udpProtocol;
+    }
+    const udpPortNum = udpCfg.port != null ? Number(udpCfg.port) : NaN;
+    if (Number.isFinite(udpPortNum) && udpPortNum >= 1 && udpPortNum <= 65535) {
+      config.lnsPort = udpPortNum;
+      config.simulation.gateway.port = udpPortNum;
+    }
+
     const simState = this.getSimState();
     this.updateSimState({
       config: {
         ...(simState.config || {}),
         signalModel: config.signalModel,
         multiGateway: config.multiGateway,
+        lnsHost: config.lnsHost,
+        lnsPort: config.lnsPort,
+        udpSocketFamily: config.udpSocketFamily,
+        simulation: {
+          ...((simState.config && simState.config.simulation) || {}),
+          gateway: {
+            ...(((simState.config && simState.config.simulation) || {}).gateway || {}),
+            address: config.simulation?.gateway?.address,
+            port: config.simulation?.gateway?.port,
+          },
+        },
         chirpstack: {
           ...(config.chirpstack || {}),
           apiToken: config.chirpstack && config.chirpstack.apiToken ? '***' : '',
